@@ -27,7 +27,7 @@
     }
   },
   "peerDependencies": {
-    "dsh-session-groups": ">=0.7.1"
+    "dsh-session-groups": ">=0.7.2"
   },
   "license": "MIT",
   "engines": {

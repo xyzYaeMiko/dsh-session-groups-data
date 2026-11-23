@@ -34,7 +34,7 @@
 ### 依赖
 
 - DSH `>=0.2.1-rc.2 <0.3.0`
-- 必须先安装 [`dsh-session-groups`](https://github.com/xyzYaeMiko/dsh-session-groups) `>=0.7.1`
+- 必须先安装 [`dsh-session-groups`](https://github.com/xyzYaeMiko/dsh-session-groups) `>=0.7.2`
 
 只安装本插件不会生效。数据菜单只有在核心插件提供
 `sessionGroupsUI` 服务后才会出现。
@@ -81,7 +81,7 @@ Host data bridge. It does not render or replace the sidebar.
 ### Requirements
 
 - DSH `>=0.2.1-rc.2 <0.3.0`
-- `dsh-session-groups >=0.7.1` installed first
+- `dsh-session-groups >=0.7.2` installed first
 
 Install the core plugin, then this extension. The data menu is hidden while the
 core service is absent.
