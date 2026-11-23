@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-groups-data",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Data panel extension for dsh-session-groups: session token, context, model, file, cost and tool statistics.",
   "exports": {
@@ -12,7 +12,10 @@
     "client.js",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "docs/data-overview.png",
+    "docs/data-expanded.png",
+    "screenshots.json"
   ],
   "dsh": {
     "bundle": {
