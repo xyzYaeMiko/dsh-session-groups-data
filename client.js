@@ -1,0 +1,9238 @@
+/**
+ * Session Groups — browser half.
+ *
+ * Registers a replacement occupant for the sidebar shell's `sidebar.workspaces`
+ * single slot (priority below the shipped browser), then renders workspaces with
+ * draggable sessions grouped into colored, collapsible groups.
+ *
+ * Groups are browser-local view state: they are namespaced by workspace id and
+ * never contain a session that is not a member of that workspace. Session
+ * membership, titles, archive state, and the selected session still come from
+ * the Session and Workspace controllers through the slot's standard hooks.
+ */
+
+window.__ModuleLoader__.load({
+  id: 'dsh-session-groups-data',
+  factory(require) {
+    const React = require('react');
+    const h = React.createElement;
+
+    const NS = 'sessionGroupsData';
+    const STORAGE_KEY = 'dsh.session-groups.v1';
+    const GROUP_COLORS = [
+      '#4c7dff',
+      '#e4539c',
+      '#a259d9',
+      '#3f9bf0',
+      '#2fa7a0',
+      '#e28a3a',
+      '#d6b02f',
+      '#8a8f98',
+    ];
+
+    // Generated from pypinyin: first-letter table for CJK Unified Ideographs (U+4E00..U+9FFF).
+    const PINYIN_BASIC_INITIALS = [
+      'ydkqsxhwzssxjbymgcczqpssqbycdscdqldylybsgjgyqzjjfgcclzzbwdwzjljpfyynwjjtmyyzwzhflyppqhgccyyymjqyxxgjxhsdsjnjjsmhmlzrxyfsngsyczqzggllyjlmyzssecykyyhqwjssggyxyqyjtwkdjhychmyxjtlxjyqbyxdldwrrjjwysrldzjpcbzjjbrcfslbczstzfxxthtrqggbdlyccscymmrfcyqzpwwjjyfcrwfdfzqpyddwyxkyjawjffxjpdftzyhhycyswccyqsclcxxwzzxnbgnnxbxlzsqcbsgpysyzdhmdzbqbzcwdzzyytzhbtsyyfzgntnxqywqskbphhlxgybfmjebjhhgqtjcysxstkzglyckglysmz',
+      'xyalmeldccxgzyrcxsdltjzcqkcnnjwhjczzcqljststbnxbtyxceqxgkwjyflzqlyhjqspsfxlfpbyqxxxydcczylllsjxfhjxpjbcffyabyxbhczbjyclwlczggbtssmdtjcxpthyqtgjjscjfzkjzjqnlzwlslhdzbwjncjzyzsqnycqyrzcjjwybrtwpyftwexcskdzctbxhyzcyyjxzcfbzzmjyxxcdczottbzljwfcgszsxfyrlnyjmbdthjxsqjccsbxyytsyfbjdztgbcnclcyzzbsacyzzscjcshzqydxlbpjllmqxtydzxsqjtzpxlcglqccwjbhctdjjsfxjejjtlbgxsxjmyjjqpfzasyjncydjxkjcdjszcbartcclnjqmwnqnc',
+      'lllkbybzzsyhqcltwlccrshllzntylnewyzyxczxxgdkdmtcedejtsyys?dqdfmsd?jlhrwnqlybglxhlgtgxbqjdzfyjsjyjcjmrnymgrcjczgjmzmgxmmryxkjnymsgmzjymklfxmbdtgfbhcjhkylpfmdxlqjjsmtqgzsjlqdldgjycalcmzcsdjllnxdjffffjczfmzffpfkhkgdpqxktacjdhhzdddrrcfqyjkqccwjdxhwjlyllzgcfcqdsmlzpbjjplsbcjggdckkdezsqsckjgcgkdjtjllzycxklqscgjcltfpcqczgwbjdqsdjjbyjhsjddwgfsjgdkccctllpspkjgqjhzzljplgjgjjthjjyjzcjmlzlyqbgjwmljkxzdznjqsyz',
+      'mljlljkywxmkjlhskjgbmclyymkxjqlbmclkmdxxkwyxwslmlpsjqjcqxyjfjtjdxmxxllcrqbsyjbgwywxggbcyxpjtgpepfgdjgbhbnsfjyzjkjkhxqfgqzkfhygkhdgllsdjjxpqykybnqsxqnszswhbsxwhxwbzzxdmndjbsbkbbzklylxgwxjjwaqzmywsjqlcjxxjqwjeqxscwetlzhlyyysdzpyqyzcptlshtzcfycyxyljsdcjjagyslcllyyysglrqqeldxzsccccadycjysfsgbfrsszqsbxjpsjwsdrckgjlgdkzjzbdktcsyqpyhstcldjlhmxmcgxyzhjdctmhltxzxylymohyjcltyfbqqjbfbdfehtksqhzywwcnxxcdwhhwg',
+      'yjlegmdqcwgfjhcsntwydolbygwqwesjpwnmlrydzsztxyqpzgcwxhngpyxshmdqjgztdppbfyhzhhjyfdzwkgkzbldntsxhqeegzxylzmmzyjzgszxkhkhtxexxgylyapsthxdwhzydpxagkydxbhnhxkdfjnmyhylpmgocslnzhkxxlbzzlbmlsfbhhgsgyyggbhscyajtxwlxtzqcwzydqdqmmgdqllszhlsjzwfjhqswscelqazynytlsxthaznkzzsdhlacxtwwcsgqqtddyzbcchyqzflxpslzygpzsznglydqcbdlxjtctajdkywnsyzljhhdzcwnyyzyomhychhhxhjkzwsxhdnxlyscqydpclyzwmypbkxyjlkzhtyhaxqsyshxasmc',
+      'hkdscrswjpwqsgzjlwwschs?hsqnhzsngndaqtbaalzzmsstdqjcjktscjaxplggxhhgoxzcxpdmmhldgtybysjmxhmrcplxjzckzxshflqxccdhxezfchzccdytcjyxqhlxdhypjqxnlsyydzozjnyxqezysjyayjkypdghddxsppyzndlthrhxydpcjjhtcxmctlhbynyhmhzllhnxmylllmdcppxhmxdkycyrdltxjchhznxclcclylnzsxzjzzlnnllwhyqsnjhxynttdkyjpychhyegkcttwlgqrlggtgtygyhpyhylqyqgcwyqkpyyyttttlhyhlltyttsplkyzwgywgpydqqzzdqxskcqnmjjzzbxyqmjrtfbbtkhzkbjdjjkdjjtlbwf',
+      'zpbtkqtztgpdgntpjyfalqmkgxbcclzfhzclllladpmxdjhlcclgyhdzfgyddgcyyfgydxkssebdhykdkdkhnaxxybfbyyhxcqgabfqyjjdmljcsjzllpchbsxgjyndybyqspqwjlzkcddtaccbkzdyzypjzqsjnkktknjdjgyepgtlfyqkasdntcyhblgdzhbbydmjrygkzyheyybcmcdtyfzjjhgcjplxhldwxjjkytcyksssmtwcttqzlzbszdtwzxgzagyktywxlhlcpbclloqmmzsslcmbjcszzkydczxgqjdsmcytzqqlwzqzxssbpkdfqmddzdsddtdmfhtdyzjaqjqkypbdjyyxtljhdrqxxxhaydhrjlklytwhllrllrcxylbwsrszz',
+      'symkzzhhkyhxksmzsyzgcjfbzbsqlfcxxxnxkxwymsddyqwggqmmyhcdzttfgyyhgstttybykjdhkyjbelhdypjqnfxfdqkzhqkzbyjtzbxhfdxbdaswhawajldyjsfhbldnndnqjtjnchxfjsrfwhzfmdrfjyhwzpdjkzyjymfcyznynxfbytfwfwygdbnzzzdnytxzemmqbsqehxfzmbmflzzsrsymjgsxwzjsprydjsjgxhjjgljjynzjjxhgjkymlpeyycsysgqzswhwlyrjlpxslcxmfsmwkcctnxnynpnjszhdzeptxmwywayysywlxjqzqxzdclaeelmcpjpclwbxsqhfwrtffjtnqjhjqdxhwlbyccfjlalkyyjldxhhycstdywncjtx',
+      'ywdrmdrqhwqcmfjdyzmhmayxjwmyzqsxtlmrspwwchajbxtgcypxyyrrclmpamgkqjszyjrmyjsnxtplnbappypylxmyzkynldgyjzczhnlmzhhanqmpgwqtzmxxmllhgdzxyhxkrxycjmffxyhjfsbssqlhxndycannmtcjcyprrnytyqnyymbmsxndlylysljnlqyshqmllyzlzjjjkymzcsfbzxxmstbjgnxyzhlsnmcqscyznfzlxbrnnnylmnrtgzqysatswryhyjzmzdhzgzdwybsscskxsyhytsxgcqgxzzbhyxjscrhmkkbsczjyjymkqhzjfnbhmqhysnjnzybknqmcjgqhwlsnzswxkhljhyybqcbfcdsxdldspfzfskjjzwzxsddx',
+      'jseeegjscssmgclxxkywyllymwwwgydkzjgggtggsycknjwnjpcxbjjtqtjwdsspjxzxnzxwmelptfsxtllxcljxjjljsxctnswxlehhlyqrwhsycsqrybyaywjejqfwqcqqcjqgxaldbzzyjgkgxpltqyfxjltpadkyqhpmatlcpdhkxmtxybhblefxdleegqdymsawhzmljtwyqxlyjzljeeyxbqqffnlyxrdsctgjgxyylkllxqkcctlhjlqmkkzgcyygllljdzgydhzwxpysjbzkdzgyzzhywyfqytyzszyezklymhjjhtsmqwyzlkyywzcsrkqyqltdxwcdrjklwsqzwbdcqyncjsrszjlkcdcdtlzzzacqqczddxyplxcbqjylzllljddz',
+      'jgyjyjzyxnyyynxjxkxdazwyrdljyyyrjlglldrxjcykywnqcclddnyyykyckczhjxcclgzqjgjwppcqqjysbzzxyjxjbxjfzbsbdsfnsfpzxhdwztdmpptblzzbzdmyypqjrsdzsqzsqxbdgcpzswdwcsqzgmdhzxmwwfybpdgphtmjthzsmmbgzmbzjcfzhfcbbzmqcfmbcmcjxlgpnjbbxgyhyyjgptzgzmqbqdcgybjxlwzkydpdymgcftpfxyztzxdzxtgkmtybbclbjaskytssqyymscxfjeglsllszbqjjjaklyldlycctsxmcwfgkkbqxlllljyxtyltyxytdpjhnhgnkbyqnfjyyzbyyessessgdyhfhwtcjbsdzjtfdmxhcnjzymqw',
+      'srxjdzjqpdqbbsdjggfbkjbxdgjhmgwjjjgdllthzhhyyyyyysxwtyyyccbdbpypzyccztjpzywcbdlfwzcwjdxxhyhlhwczxjtczlcdpxdjczczlyxjjsjbhfxwpywxzptdzzbdccjhjhmlxbqxxbylrddgjrrctttgqsczwmxfytmwzcwjwxjywcskybzqccttqnhxnkxxkhkfhtswoccjybcmpzzyjbnnzpbthhjdlscddytyfjpxyngfxbyqxcbhxcbsxtyzdmzysnxsxlhkmzxlthdhkghxjsshqyhhcjyxglhzxcsnhekdtgqxqypkdhextykcnymyyypkqyytjxzlthhqtbyqhxbmyhsqckwwyllhcyylnneqxqwmcfbdccmljggxdqkt',
+      'lxkgnqcdgzjwyjjlyhhqtttnwchhxcxwheszjydjccdbqcdgdnyxzdhcqrxcbmztqcbxwgqwyybxhmbymykdyecmqkyaqyngyzslfykkqgyssqyshjgjcnxkzycxsbkyxhyylstycxqthysmgscpmmgcccccmtztasmgqzjhklosqylswtmqsyqkdzljqqyplcycztcqqpbbqjzclpkhqcyyxxdtdddsjcxffllchqxmjlwcjcxtspycxndtjshjwxdqqjckxyamylsjhmlalykxcyydmamdqmlmcznnyybzkkyflmchcmlhxrcjjhsylnmtjggzgywjxsrxcwjgjqhqzdqjdzjjzkjkgdzqgjjyjylhzxxcdqhhhestmhlfsbdjsyyshfyssczq',
+      'lpbdrfrztzdkykgsctgkwdqzrkmsynbcrxqbjyfaxpzzedzcjykbcjwhyjbqdzywnyszptdkzpfpbaztklqyhbbzpnbptyzzybhnydcpjmmcycqmcjfzzdcmnlfpbplngqjtbttajzpzbbdnjkljqylnbzqhksjznggqsczkyxchpzsnbcgzkddzqanzgjkdntlzldwjljzlywtxndjzjhxyatncbgtzcsskmnjpjytsrwxcfjwjjtkhtzplbhsnjzsyjbwbzyzlstlsbjhdwwqpslmmfbjdwajyzccjtbnnrzwqxcdslqgdsdpdzhjtqqpsqlyyjzlgyhszlctcbjtktyczjtqkbpjlgmjzdmcsgpynjzjjyyknhrpwszxmtncszzyxybyhyzax',
+      'ywkcjtllckjjtjhgcxdxyqyczbywblwqcglzgjgqrqcczssbcrbcskydznljsqgxssjmecnstztpbdlthzwhqwqtzexnqczgweskssbybstscsjccgbfsdqszlccglllzghzcthcnmjgyzaznmckcstjmmzckbjygqljyjppldxrgzyxccsnhshgdznlzhzjjcddcbcjflbfqbczzwpqdnhxljcthqwjgylnlszzpcjdscqqhjqkdxkpbajyemsmjtzdxlcjyryynwjbngzzkmjxltbsllrtpylcsznxjhllhyllqqzqlxymrcwcxsljmczltzldwdjjllnzggqxppskygyggbfzpdkmwghcxmcgdxjmcjsdycabxjdlnbcddygskydjtxdjjyxm',
+      'saqazdzfslqxyjsjzylblxxwxqqzbjzlfbblylwdsljhxjyzjwtdjcyfqzqzzdcsxzzqlzcdzfchyspympqzmlpplffxjjnzzylsjyyqzfpfzksywjjjhrdjzzxtxxglghtdxcskyswmmtcwybazbjkshfhgcxmhfqhyxxyzftsjyzbxyxpzlchmzmbxhzzssyfdmncwdabazlxktcshhxkxjjzjsthygxsxyyhhhjwxkzxcsbzzwwhhcwtzzzpjxsnxqqjgzyzawllcwxzfxgyxyhxmkyyswsqmnjnaycyspmjkgwcqhylajjmzxhmmcnzhbhxclxtjpltxyjhdyylttxfszhyxxsjbjyayrsmxyplckdlyhlxrlnllstyzyyqygyhhsccsmcct',
+      'zcxhyqfpyyrpfflfqtntszllzmhwtcjqyzwtllmlmdwmbzssmzrbpdddlgjjbxccsrzqqygwcsxfwzlxccrbtdzmcyggdlqsgtjmwljmymmsyhfbjdgyxccpshxczcsbsjwjgjmpbwaffyfnxhydxzylremzgzcyhsszdlljcsqfzxxkptxzgxjjgbmyyysnbdylbnlhbfzdcyfbmgqrrmsszxysgtznnydzzcdgbjafjbdknzblcsscpsgzycjszlmlrzzbzzldlsllysxsqzqlyxzlsgkbrxbrbzcycxzjzeeyfgklzlyyhgysgzlfjhgtgwkraajyzkzqtsshjjxdzyz?yjlzyrzdqqhgjzxsszbtkjpbfrtjxllfqwjgslqtymblpzdxtzag',
+      'bdhzzrbgjhwnjtjxlhscfsmwlldqysjtxkzscfwjlbxftzlljzllqblcqmqqcgcdfpbbhzczjlpyygjdtgwdcfczqyyyqysrclqzfklzzzgffsqnwglhjycjjczlqzcyjbjzzbpdccmhjgxdqdgdlzqmfgpsytsdyfwwdjzjysxyycjcyhzwpbyhxrylybhkjksfxtzjmmchhlltnyymsxxyzpyjjycdyzwmtjjkqyrhllqxpsgtlwycljscbxjyzfnmlrgjjtyzbsyzmsjyjhgfzqmsyxrszcwtlrtqzsstkxgqggsptgcdnjsgcqcqhmxggztqydjkzdlbzsxjlhyqgggthqscpyhjhhgnygkggcmjdzllcclxqsftgzslllmlcskctbljzzsz',
+      'mmnytpzsxqhjcjyqxyexzqzcpshkzzysxcdfgmwqrllqxrfztlysdctmjcsjjdhjnxtnrztzfqrhqgllgcxszsjdjljcytsjtlnyxhszxcgjzyqpylfhdjsbpcczgjjjqzjqdybssllcmyttmqtbhjqnnygkynqyqmzgcjkpdcgmyzhqllsllclmholzgdylfzsljcqzlylzcjeshnylljxgjxlyjyyyxnbcljsswcqqcjyllcldjyllzllbnylgqchxyyqoxccqkyjxxhyklksxayqccqkkkkcsgyxxyqxygwtjohthxpxxcsshcyeychzzcbwqbbwjqcscszsslzylgdesjzmmymcytsdsxxscjpqqsqylyfzychdjdzywcbtjsydjhcyddjlb',
+      'djjsodzyqysqkxxdhhgqjyohdyxwgmmmajdybbbppbcmhcpljzsmtxerxjmhqdstpjdcbssmsssthjtslmmtrcplzszmlqdsdmjmqpnqdxcfynbfsdqqyxhyaykqyddlqyyysszbydslntfgtzqbzmchdhczcwfdxtmqqsphqwwxsrgjcwtjtzzqmgwjjrjhtqjbbgwzfxjhnqfxxqywyyhyscdydhhqmnmdmmcpbszppzzglmzfollcfwhmmsjzttthlmyffytzzgzyskjjxqyjzqphmbzzlyghgfmshpcfzsnclpbqsnjszslxjfpmtyjygbxlldlxpzjypjyhhzcywhjylsjexfsszywxkzjlladtmlymqjpwxxhxsktqjezrpxxzghmhwqpw',
+      'qlyjjqjjzszcfhjlchhnxjlqwzjhbmzyxbdhhypylhlhlgfwlcfyytlhjjcjmscpxstkpnhjxsntyxxtestjctlsslstdlllwwyhdhrjzsfgxssyczykwhtdhwjslhtzdqdjzxxqggyltzphcsqfzlnjtclzpfstpdynylgmjllycqhynsbchylhqyqtmzybbywrfqykjsyslzdyjmpxyyssrhzjnyqtqdfzbwwdwwrxcwhgyhxmkmyyyhmsmzhngcepmlqqmtcwctmhmxjpjjhfxyyzsjzhtybmstsyjdtjjqytlhynbyqzlcxcnzwsmylkfjxlwgbypjytysylymzckttwlgsmzsylmpwlzwxwqzssaqsyxyrhssntsrapccpwcmgdhhxzdzxf',
+      'jhgzttsbjhgyglzysmyclllybtyxhbbzjkssdmalhhycfygmqypjycqxjllljgclzgqlycjcctotyxmtmshllwcgfxymzmklpszzzxhhjyslctyjcyhxsgyxzkxlzwpyjpdhjwpjpwsqqxlxxdhmrslzcyzwstcxkystzshbsccstplwsscjchjlcgchssphylhfhhxjsxyllnylmzdhzxylsxlwzyhcldyahzcmddyspjtqjzlngjfsjshctsdszlblmssmnyymjqbjhrcwtyydchqljapzwbgqybkfcmjwlzllyylszydwhxpsbcmljpscgbhxlqhyrljxyswxhxzlldfhlslymjljyflyjycdrjlfsyzfsllcqyqfgjyhyszlylmstdjcyhbz',
+      'llnwlxxygyyhbmgdhxxhhlzzjzxczzzcyqzfnjwpylcpkpykpmclgkdgxzggwqbdxzzkzfbxxlzxjtpjpttbytszzdwslchzhsltjxhqlhyxxxywzyswtmzkhlxzxzpyhgchkjfsyh?tjrlxfjxptztwhplyxfcrhxshxkjxxyhzjdxjwylhyhmjdbflkhtxcwhcfwjcfpqrxqxcyyyjygrpxgscsxngwchkzdxhflxxhjjbyzwtsxnncyjjymswzjqrmhxzwfqsylzjzgbhynslbgttcsebhxxwxyhhxyxnsqyxmlywrgyqlxbbcljsylpsytjzyhyzawlhorjmksczjxxxyxchcytryxqjddsjfslyltsffyxlmtyjmjjyyyxltzcsxqzlhzxl',
+      'wyxzhdnlrxhxjcdyhlbrlmbrllaxksllljlyxxlycrylcjcgjcmtlzllcyzzpzpcyawhjjfybdyyzsepckzdqyqpbpcjpdcyzbdbbcyydycnnpjmtmlrmfmmgwygbsjgygsmdqqqztxmkqwgxllpjgzbqcdjjjfpkjkcxbljmswmdtqjxldlppbxcwkcqqbfqjczagzgmykbhyyhzykndkzmbpjyspxthlfpnyygxjdbkxnhhjhzjxstrstldxskzysybmxjlxyslbzyslhxjpfxbqnbylljqkygzmcyzzymccsldlhzgwfwyxzmwcxtynxjhbyymcysbmhysmydyshqyzchmjjmzcaahcbjbbhplxtylsxsdjgjdhkxxtxxnbhnmlngsltxmrhn',
+      'lxqjxmzllyswqgdlbjhdcgjyqycmhwfwjybbbyjmjwjmdpwhxqldyapdfxxbcgjspckrssyzjmslbzzjfljjjlgxzgyxyxlszqyxbexyxhgcxbpldyhwecdwwcjmbtxchxyqxllxflyxlljlssfwdpzsmyjclmswtczbchqekcqbwlcgydblqppqzqfjqdjhymmcxtxdrmjwrhxcjzclqxdyynhyyhrslsrsywwzjymtltllgzqcjzyabsckzcjyccqljsqxalmzyyywlwdxzxqdllqshgpjfjljhjabcqzdjgthhsstcyjlbswzlxzxrwgldlzrlzqtgsllllzlymxqgdzhgbdbhzpbrlw?xqbpfdwo??whlypcbjcc?dmbzpbzz?cyqxldomzb',
+      'lzwpdwyygdstthcsqsccrsssyslfybfntyjszdfndpthtzzmbblxlcmyffgtjjqwftmdpjwdnlbzcmmctgbdzlqlpyfhsymjylsdchdzjwjcctljcldtljjcpddpjdsszynndbjlggjzxsxnlycybjjqxcbylzcfzppgkcxzdzfztjjfjsjxzbnzyjqttyjwhtyczhymdjxttmpxsflzcdwslshxybzgtfmlcjtacbbmgdewycyzcdszcyhflyctygwhkjyylsjcxgywjcbhlcsnddbtzbsclyzczzssqdllmqyyhfllqllxfdyhabxggnywyypllsdldllbjcyxjzmlhljdxyyqytdlllbbgbfdfbbqjzzmdpjhgclgmjjpgaehhbwcqxaxhhhz',
+      'chxyphjaxhlphjpgpzjqcqzgjjzzgzdmqyybzzphyhybwhazyjhykfgdpfqsdlzmljxjpgalxzdaglmdgxmwzqytxdxxpfdmmssympfmdmmkxksyzyshdzkjsysmmzzzmsydnzzczxbmlstmddnmxckjmztyymzmzzmsshhdccjemxxkljstgwlsqlyjzllsjssdbpmhnlyjczyhmxxhgzcjmdhxtkgrmxfwmckmwkdcksxqmmmfzzydkmsclcmpcgmwrpxqpzdsslcxkyxtmlgjyahzjgzqmcsnxyhmmpmlkjxmhlmlgmxctkzmjjyszjsyszhsyjzjcdajzybsdqjzgwzkgxfkdmsdjlfmehkzqkjbeypzyszcdwyjffmzjykttdzzefmzlbnp',
+      'plplpbpszalltylkckqzkgenqlwagxxydpxlhsxqqwqykxqclhyxxmlyccwlymqyskychlcjnszkpyzkcqzqljbdmdjhlasqlbydwqlwdnbqcrydddtjybkbwszdxdtnpjdtctqdfxqqmgnseclstbhpwslctxxlpwydzklzygzcqapllkccylbqmqczqcljslqzdjxldthpzqdljjxzqdjyzhkzljcyqdyjppypeakjyrmpcbymcxkllzllfqpylllmbsglcysslrsysqtmxyxqqzbdzrysyztffmzzsmzqhzssccmlyxwtpzgxzjgzgsjsgkddhtqggzllbjdzlcbzhyxyzhzfywxyzymsdbzzyjgtsmtfxqyxjscdgslnmdlrytzlryylxqht',
+      'xsrtzcgyxbnqqzfhykmzjbzymkbpnlyzpblmcnqyzzzsjzhjctzhhyzzjrdyzhnfxglfxslkgjtctssyllgzrzbbjzzklpkbczyslxyxbjfpnjzzxcdwxzyjxzzdjjgggrsrjkmcmzjlsjywqshyhqjsxpjzzzlsnshrnypjtwchklbsrzlcxwjqxqkysjycztlqzybbybwzjqdwgyzcytjcjxckcwdkkzxsgkdzxwwyyjqyytcytdjlxwkczkklcclzcqqdzlqlcsfqchqhsfsmqzzllbjjzbsjhtsjdysjqjpdlzcdcwjkjzzlpycgmzwdjjbsjqzsyzyhhxcbbjydssddzncglqmbtsfcbfdzdlznfgfjgfsmptjqlmblgqcyyxbqkdxjqsrf',
+      'kztjdhczklbsdzcfytplljgjhtxzcsszzxstcygkgckgyoqxjplzbbbgtgyjdgczqszlbjlsjfzgkqqjcgyczbzqtldxrjxbsxxpzxhyzyclwdsjjhxmfczpfzhqhqmqgkslyhtycgfrzgnqxclpdlbzcsczqlljblhbdcypczppdymtzsgyhckcpzjgslclnscdsldzxbmsdlddfjmkdjdhslzxlszqpqpgjllybdszgqlbzlslkyyhzttncjyqtzzfszqztlljtyyllqllqyzqlbdzlslyyzymdfszsnhlxznczqzbbwskrfbcyzmthblgjpmczzcstlxshtzcyzlzblfeqhlxflcjlyljqcbzlzjghsstbrmhxzhjzclxfnbgxgtqjcztmsfz',
+      'kjmssnxljkbhszxntnlzdntlmsjxgzjyjczxyhyhwrwwqnztnfjscpzshzjfyrdjsfscjzbjfzqzchzlxfxsbzqlzsgyftzdcszxzjbqmszkjrhxjzcgbjkhchgtjkjqglxbxfgdrtylxjxgdtsjxhjzjjcmzlcqsbtxhqgxttxhxftsdkfjhzyjfjxrzcdlllcqsqqzqwqxswqtwgwbzcgcllqzbclmqqtzgzxzxljfrmyzflxysqxxjkxrmjdcdmmyxbsqbhgcmwfwtgmxlzbyytgzyccdxyzxswgxyjyznbgpzjcqsyxcxrtfycgrhztxszzthcbfclsyxzljqmzlmplmxzjssflbysmyqhxjsxrxsqzzzsslyflczjrcrxhhzxqydshxsjjh',
+      'zcxjbdynsysxjbqlpxzqpymlxzkyxlxcjlcycrxzzlldlllsjyhzxgyjwkjrwyhcpsgnrzlfzwfzznsxgxflzsxzzzbfcsyjdbrjkrdhhgxjljjtgxjxxstjtjxlyxqfcsgswmsbctlqzzwlzzkxjmltmjyhsddbxgzhdlbmyjfrzfcgclyjbpmlysmsxlszjqqhjzfxgfqfqbpxzgyyqxgztcqwyltlgwwgwhllfsfgzjmgmgbgtjfsyzzgzyzaflsspmlbflcwbjzcljjmzlpjjlymqdmyyyfbgygqzglyzdxqyxrqqqhsxyyqqygjtyxfsfsllgnqcygycwfhcccfxbylypllzqxxxxxkqhhxshjdcfdsczjxcpzwhhhhhapylhalpqafyhxd',
+      'yllkmzqgggddesrnndltzgchybpysqjjhclljtolnjpzljlhymheydydsqycddhgzpndzclzywllznteytgxlhslpjjbdgwxpcdntjcklkclwkllcasstknzdnqnttlyyzssysszzryljqkcgbhhcrxrzydgrgcwcgzhfffppjfzynakrgywyqpqxxfkjtszzxswzddfbbqtbgtzfznpzfpzxzpjszbmqhkcyxyldkljnypkyghgdcjxxeahpnzgctzcmxcxmmjxnkszqnmnlwbwwxjjyhclstmcsqdjcxxtpcnpdtnnpglllzcjlspblplkcdtnjnlyyrscffjfqwdpgzdwmnzcclodaxnssnyzrestyjwjyjdbcfxnmwttbqlwstszgybljpxg',
+      'lboclgpcbjftmxzljylzxcltpnclcgxtfzjshcrxsfyszdkntlbyjcyjllstgqcbxnwzxbxklylhzlqzlnzcqwgzlgzjncjgcmnzzgjdzxtzjxycyycxxjyyxjjxsssjstssttppghtcsxwzdcsyfptfbchfbblzjclzzdbxgcxlqpxkfzflsyltywbmnjhskbmddbcysccldxycddqlyjjhmqllcsgljjsyfpyyccyltjantjjpwycmmgqyysqdhqmzhszxpftwwzqswqrfkjlxjqqyfbrxjhhfwjgzyqacmyfrhcyybyqwlpexcczstyrltsdmqlykmbbgmyyjprknnbbsxyxbhyzdjdnghpmfsgbwfzmfjmmbcmzzcjjlcnyxyqgmlrygqccy',
+      'hzlwjgcjcggmcjjfyzzjhycfrrcmtzqzxhfqgdjxccjeaqcrjthpljlszdjrbcqhjdzrhxlyxjsymhzydwldfryhbbydtssccwbxglpzmlzztqsscpjmmxjcsjytycghycjwsnsxlfemwjnmkllswtxhyyygcmmcwjdqdjzglljwjnkhpzggflccsczmcbltbhbqjxqdjpdjqtghglfqawbzyjjltstdhqhctcbchflqmpwdshyytqwcnztjtlbypbpdyyyxsqkxwyyflxxncwcxybmaelykkjmzzzbrxyaqjfljpfhhhytzzxrgqqmhspgdzjwbwpjhzjdyscqwzkthxsqlzyymysdzgrxckkhjlwpysyscsyzlrmlqsyljxbcxtlhdqzpcycyk',
+      'pppnsxfyzjjrcemhszmsxlxglrwgcstlrsxbygbzgztcpldjlslylymdtmtcpalcxpqjcjwtcyyzlblxbzlqmyljbghdslssdmxmbdczsxwhamlczcpjmcnhjyjnsygchskqmzzqdllkablwjqsfmocdxjrrlyqchjmybyqlrhetfjzfrfksryxfjdwdsxxlwsqjyslyxwjhsnlxyyxhbhawhhjcxwmyljcsqlkydttxbzsxfdxgxsjhhsxxybssxdpwncmrptjzczenygcxqfjxkjbdmljcmqqxloxslyxxlylljdzbtymhbfsttqqwlhogyblscalzxqlhtwrrqhlstmypyxjjxmqsjpnbryxyjllyqylthylqyfmhkljdmllhfzwkzhljmlhl',
+      'jkljstlqxylmbhhlnlsxqchxcfxxlhyhjjgbyzzkbxscqdjqdsxjzsyhzhhmgsxcsymxfebcqwwrbpyyjqtyqcyjhqqzyhmwffhgzfrjfcdbxndqyzpcyhhjlfrzgppxzdbbgzqstlgdgylcqmgchhmfywlzyxkjlypqhsywmqqgqzmlzjnsqxjqsyjtcbehsxfssfxzwfllbcyyjdytdthwzsfjmqqyjlmqsxlldttkhhybfpwdyysqqrnqwlgwdebdwcyygcdlkjxtmxmyjsxhybrwfymwfrxyqmxysctzztfykmldhqdlwyqnlcryjblpsxcxywlsbrrjwxhqybhtydnhhgmmywytzcsqmtssccdalwztcpqpyjllqzyjswxwzzmmglmxclmx',
+      'czmxmzsqtzppjqblpgxjzhfljjhycjsnxwcxsccdlxsyjdcqcxslqyclzxlzzxmxqrjmhrhzjphmfljlmlclqnldxzlllfypngjysxcqqdcmqjzzxhnpnxzmekmxxykyqlxsxtxjxyhwdcwdzhqyybgybcyscfgfsjnzdyzzjzxrzrqjjymcanhrjtldbpyzbstjhxxzypbdwfgzzrpymtngxzqbyxmbbfcckrjjjbjegrzgyclkxzdxkknsjkcljspgyyzlqqjybzssqlllkjfcbktylcccdblsppfylgydtzjyqggkqttfcxbdkdxxhybbfytyhbclpdytgdhryrnjsbtcsnyjqhklllzslydxxwbcjqsbxbfjzjcjdzfbxxbrmlazgcsnclbj',
+      'dstblfrzdswsbxbcllxxlzdjzsjpylyxxyftfffbhjjjgbygjpmmmmsscljmtlyzjxswxtyledqpjmygqzjgdjlqjwjqllsdgjgygmscljjxdtygjqjqjcjzcjgdzdshqgsjggcjhqxsnjlzzbxhsgzxcxyljxyxyydfqqjhjfxdhctxjyrxysqtjxyefyyssyxjxncyzxfxcsyszxyyschshxzzzgzzzgfjdldylnpzgyjyzyyqzpbxqbdztzczyxxyhhscxshcggqhjhgxwsztmzmehyxgebtylzkkwytjzrclekestdbcykqqsayxcjxwwgsbhjszsdhcsjkqcxswxfctynydpzcczjqtzwjqdzzzqzljchlsbhpydxpsxshhezdxfptjqyzz',
+      'xhyaxncfzyyhxgnqmywxtzsjpkhhgymxmxqcxtsbcqsjyxhtyylybcqlmmszmjzjllcogxzaajzyhjmchhcxzsxzdznleyjjzjbhzwzzsqtzpsxztdsxjjjznyazphhyysrnqdthzhayjyjhdzxzlswclybzyecwcycrylcxnhzydzydyjdfrjjhtrsqtxyxjrjhojynxelxsfsfjzghpzsxzszdzcqzbyyklsgsjhczshdgqgxyzgxchxzjwyqwgyhksseqzzndzfkwyssdclzstsymcdhjxxyweyxczaydmpxmdsxybsqmjmzjmtzqlpjyqzcgqhxjhhhxxhlhdldjqsldwbsxfzzyyschtytyjbhecxhjkgjfxbhyzjfxbwhbdzfyzbcapnpg',
+      'nydmsxhkhhmamlnbyjtmpxyjmcthjbzyfcgtyhwphftgzzezsbzegpbmdskftycmhbllhgpzjxzjgzjyxzsbbqsczzlzccstpgxmjsftcczjzdjxcybzlfcjsyzfgszlybcwzzbyzdzypswyjgxzbdsysxlgzbzfygczxbzhzftpbgzgejbstgkdmfhyzzjhzllzzgjqzlsfdjsscbzgpdlfzfzszyzyzsygcxsntxchczxtzzljfzgqsqyxzjqccccdjcdxzjyqjccgxztdlgscxzsyjjqtcclqdqztqchqqjztezzzpbkkdjfcjfztybqyqttynlmbdktjcpqzjdzfpjsbnjlgyjdxjdzqkzgqkxclpzjtcjdqbxdjjjstcjnxbxcmslyjcqmt',
+      'jqwwcjjnjnlllhjcwqtbzqyczczpzzdzyddcyzdzccjgtjfzdprntctjdcqtqndtjnplzbcllctdsxkjzqdpzlbznbtjdcxfczdbccjjltqjpldcgzdbbzjcqdcjwynllzlzccdwllxwzlxrsntqjccxkjlsgdfqtddglrlajjtklymkqlldzytdyycygjwyxdxfrskstcdenqmrkqzhhqkdldazfkypbggpzrebzzykyzspegjjglkqzzzslysywyzwfqznlzzlzhwcgkypqgnpgblplrrjyxcccgyhsfzfwbzywtgzxyljczwhxzjzblfflgskhyjzeyjhlpllllcygxdrzelrhgklzzyhzlyqszzjzqljzflnbhgwlczcfjwspyxnlzlxgccp',
+      'zbllcxbbbbxbbcbbcrnncccyrbbsyldcgqyyqxygmqzwtzydyjhyfwdehzdjywlccntzyjjcdedpzdztstqjhdymbjnyjzlxtsstphndjxxbyxqtzqddtjtdyztgwscszqflshlglbcjbhdlyzjyckwtydylbnydsdsycctyszyyebgexhqddwnygyclxtdcystqmygzasccszzddlcclzrqxyyeljsbymxshztembbllyyllytdqyshymrqxkfkbfxnxsbychxbwjyhtqbpbsbwdzylkgzskyghqzjhhxjxgnljkzlyycdxlfwfghljgjybxblybxqpqgztzplncybxdjyqydymrbesjyyhkxxstmxrczzywxyhybmcflyzhqyzmqxdbxbzwzms',
+      'lpdmyckfmzklzcyjycclhxfzlydqzpzygyjyzmzxdzfyfyttqtchgspczmlccytzxjcytjmkslpzhysnwllytpzctzzcktxdhxxtqcypksmqccyyazhtjpcylzlyjbjxtfnyljyynrxcylmmnxjsmybcsysslzylljjgyldzdpqbfzzblfndsqkczfhhhgqmrdsxycstxnqqjpyjbfcxdyqfbnxejdgyqbsrcnfyyqpghyjdyzxgrhtkyleqdzntsmgklbsgbpyszbytjzsszjcssxzbhbscsbzczptqfzmqflypybbjgszmxxdjmthyskkbjtxhjcegbsmjyjzcxtmljyxrzzqscxxqptzxmkyxxxjcljprmyygadyskqlsadhrskqxzxztcghz',
+      'tlmlwxybwsycdbhjhcfcwzsxhytkzlxqshlyczjxemplprcgltbzztlzjcyjgdtclglpllqpjmzpapxyzlaktkdnczzbnzctdqqzjyjgmctxltgcszlmlhbglkfwnwzhdxphlfmkydlgxdtwzfrjejctzhydxykshwfzcqshktmqqhtchymjdjskhxzjzbzzxympajqmsdbxlsklyynwrtsqlscbpdbsgzwyhtlkssswhzzlyytnxjgmjszsxfwnlsoztxgxlsammlbwldszylakqcqctmycfjbslxclzjclxxksbzqclhjphqplsxsckslnhpsfqqytxjjzlqldxzjjzdyydjnzptfcdskjfsljhylzqjzlbthydgdjfdbyazxdzhzjnhhqbykn',
+      'xjjqczmlljzkspldsclbblxklelxjlbjycxjxgcnlcqplzlznjtzljgyzdzpltqcssfdmnycxgbtjdcznbgbqyqjwgkfhtnbyqzqgbkpbbyzmtjdytblsqmbsxtbnpdxklemyycjynzdtldykzzxddxhqshdgmzsjycctayrzlpwltlkxslzcggexclfxlkjrtlqjaqzncmbqdkkcxglczjzxjhptdjjmzqykqsecqzdshhadmlzfmmzbgntjnnlgbyjbrbtmlbyjdzxlcjlpldlpcqdhlhzlycblcxzcjadqlmzmmsshmybhbskkbhrsxxjmxsdznzpxlbbragggfchgmsklltsjyycqlcskywyehywhbhqywbawykqldqftntkhqcgdqktgpkx',
+      'hcpdhtwtmssyhbwcrwxhjmkmzngwtmlkfghkjyldyycxwhyeclqhkqhtdqhhffldxqwgzyydesbpkyrzpjfyyzjceqdzzdlattbbfjllcxdlmjsdxegygsjqxcfbxsszpdyzcxdnyxpfzydlyjccpltxlsxyzyrxcyysdylwwndsahjsygyhgywkaxtjzdaxysrltdjssaxfnejdxyzhlxlllzhzsjnyqyqqxyjghzgjcyjchzlycdshwsgczyjxcllnxzjjyyxnfsmwfpylcyllabwddhwdxjmcxztzpmlqzhsfhzynztlldywlslxhymmylmbwwkyxyadtxylldjpybpwfxjmmmllhafdllaflbhhhbqqjtzjcqjjdjtffkmmmbythygdcqrdd',
+      'wrqjxnbysnmzdbyytbjhpybygtjxaahgqdqtmystqxkbtsbkjlxrbeqqhqmjjbdjwtgtbxpgbktlgqxjjjcdhxqdwjlwrfmqgwqhckryswgbtgygbwsdwdwrfhwytjjxxxjyzyslphyypayxhydqkxshxyxeskqhywbdddpplcjlhqeewxksyyhdyplfjthkjltcyyhhjttpltzzcdlthqkcxqysteeywkyzyxxyysddjkllpwmcyhqgxyhcrmbxpllnqydqhxsxxwgdqbshyllpjjjthyjkyphthyyktyezyenmdshlcrpqfbgfxzbsbtlgxsjbswyysksflxlpplbbblbsfxfyzbsjssylpbbffffsscjdstzsxtryjcyffsytyzbjtbctsbsd',
+      'hrtjjbytcxyjeylxcbnebjdsysyhgsjzbxbytfzwgenyhhthjhatfwgcstbgxklstywmtmbyxjskzscdyjrcytwxzfhmymcxlznsdjtttxrycfyjsbsdyerxhljxbbdeynjghxgckgscymblxjmsznskgxfbnbbthfjaafxyxfpxmyfhdtzcxzzpxrsywzdlybbjtyqwqjpzypzjznjpzjlztfysbttslmptzrtdxqsjehbzylzdhljsqmlhtxtjecxalzzspktlzkqqyfsygywpcpqfhqhytqxzkrsgtgsqczlptxcdyyzssqzslxlzmacbcqbzyxhbsxlzdltcdjtylzjyytpzylltxjsjxhlbmytxcqrblzssfjzztnjydxmyjhlhpblcyxqj',
+      'qqkzzscpzkswalqsblcczjsxgwwwygyatjbbctdkhqhkgtgpbkqyslbxbbckbmllxdzstbklggqkqlsbkkdfxrmdkbftpzfrtbbmferqgxkjpzsstlbzdpszqzsjthljqlzbpmsmmsxlqqnhknblrddnhxdhddjcyygyfqgzlgsygmjqgkhbpmxyxlytqwlwgcpbmjxcyzydrjbhtdjxeeshtmjsbyplwhlzffnypmhxqhpltbqpfbcwjdbygpnxtbfzjgsddtjshxeawzzyllttybwjkgxghlfkxdjtmszsqynzggswqsphtlsskmclzxyszqzxncjdqgzdlfnykljcjllzlmzznhydsshthxzlzzbbhqzwwycrdhlyqqjbeyfsgxthsrxwqhwf',
+      'slmssgzttyeyqqwrslalhmjtqjsmxqbjjzjxzyzkxbyqxbjxshzssfglxmxzxfghkzszggylclsarjxhslllmzxelglxydjytlfbhbpnlyzfbbhptgjkwetzhkjjxzxxglljlstgshjjyqlqzfkcgnndjsszfdbctwwseqfhqjbsaqtgypjlbxbmmywxgslzhglzgnyfljbyfdjfrgsfmbyzhqfbwjsyfyjjphzbyyzffwodgrlmftmlbzgycqxcdjygzyyyytytydwegazyhxjlzythlrmgrjxzclhneljjthtbwjybjjbxjjtjteekhwsljplpsfazpqqbdlqjjtyyqlyzkdksqjyyjzldqcgjjyzjsycmraqthtejmfctyhypkmhycwjdcfhy',
+      'yxwshctxrljgjshccyyyjltkttytmxgtcjtzayyoczlylbszywjytsjyhbyshfjlygjxxtmzyyltxxypclxyjzyzyypnhmymdyylblhlsyygqllnjjymsoycbzgdlyxylcqyxtszegxhzglhwbljgeyxtwqmakbpqcgyshhegqcmwyywljyjhyyzlljjylhzyhmgsljljxcjjyclycjpcpzjzjmmylcjlnqljjjlxxjmlszljqlycmmhcfmmfpqqmfxlqmcffqmmmmhmznfhhjgtthhkhslnchhyqdxtmmqdcydyxyqmyqylddcyyydazdcymzydlzfffmmycqcwzzmabtbyctdmndzggdftypcgqyttssffwbdtzqssystwjjhjytsxxylbyqhw',
+      'whxezxwznnqzjzjjqjccchyyxbzxccyjtllcqxknjycyycynzzqyyoewyczdcjycchyjlbtzkycqwlpgpyllgkdldlgkgqbgychjxy????z?w???z????s?????l???????sl??z????lgtm????gd?????????????????????atn??hbltdzlatmmbj?lx',
+    ].join('');
+
+    const GROUP_COLORS_DARK = {
+      '#4c7dff': '#89a8ff',
+      '#e4539c': '#ff8bc2',
+      '#a259d9': '#c58df2',
+      '#3f9bf0': '#72c6ff',
+      '#2fa7a0': '#5fd8ce',
+      '#e28a3a': '#ffb86e',
+      '#d6b02f': '#f1d45f',
+      '#8a8f98': '#b9c0ca',
+    };
+
+    const BRIDGE_GLOBAL = '__DSH_SESSION_GROUPS_DATA_BRIDGE__';
+    const BRIDGE_EVENT = 'dsh-session-groups:prefs';
+    const ARCHIVE_EVENT = 'dsh-session-groups:archive-followup';
+    const BRIDGE_TOKEN_HEADER = 'x-dsh-session-groups-data-token';
+    const BRIDGE_PATH = '/dsh-session-groups-data-bridge';
+    const LIVE_DATA_TTL_MS = 15000;
+    const liveDataCache = new Map();
+    let bridgeSnapshotProvider = null;
+    let runningLightPreference = true;
+    const noDataProviderSubscribe = () => () => {};
+    const getNullDataProvider = () => null;
+    function groupColorVars(color) {
+      return {
+        '--dsg-group-color-light': color,
+        '--dsg-group-color-dark': GROUP_COLORS_DARK[color] ?? color,
+      };
+    }
+
+    function hexToRgb(value) {
+      const match = /^#?([0-9a-f]{6})$/i.exec(typeof value === 'string' ? value.trim() : '');
+      if (!match) return null;
+      const hex = match[1];
+      return {
+        r: parseInt(hex.slice(0, 2), 16),
+        g: parseInt(hex.slice(2, 4), 16),
+        b: parseInt(hex.slice(4, 6), 16),
+      };
+    }
+
+    function rgbToHex(r, g, b) {
+      const channel = (value) => Math.max(0, Math.min(255, value)).toString(16).padStart(2, '0');
+      return '#' + channel(r) + channel(g) + channel(b);
+    }
+
+    function pinyinInitialOfChar(char) {
+      const code = char.codePointAt(0);
+      if (code === undefined || code < 0x4E00 || code > 0x9FFF) return undefined;
+      const initial = PINYIN_BASIC_INITIALS[code - 0x4E00];
+      return initial && initial !== '?' ? initial : undefined;
+    }
+
+    function textInitialKey(value) {
+      const text = typeof value === 'string' ? value.normalize('NFKC') : '';
+      let key = '';
+      for (const char of text) {
+        const initial = pinyinInitialOfChar(char);
+        if (initial !== undefined) {
+          key += initial;
+          continue;
+        }
+        if (/[A-Za-z0-9]/.test(char)) key += char.toLowerCase();
+      }
+      return key || text.toLowerCase();
+    }
+
+    const INITIAL_COLLATOR = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
+
+    function compareTextInitial(left, right) {
+      return INITIAL_COLLATOR.compare(textInitialKey(left), textInitialKey(right))
+        || INITIAL_COLLATOR.compare(String(left), String(right));
+    }
+
+    const ZH = {
+      'section.title': '工作区',
+      'section.loading': '正在加载工作区…',
+      'section.empty': '还没有工作区',
+      'section.emptySearch': '没有匹配的会话',
+      'addWorkspace': '添加工作区',
+      'addWorkspace.dialogTitle': '添加工作区',
+      'addWorkspace.pathLabel': '目录绝对路径',
+      'addWorkspace.pathPlaceholder': '例如 /home/user/project',
+      'addWorkspace.confirm': '添加',
+      'addWorkspace.cancel': '取消',
+      'addWorkspace.invalidPath': '请输入绝对路径',
+      'addWorkspace.pickerTitle': '选择工作区目录',
+      'addWorkspace.useThis': '使用此目录',
+      'addWorkspace.loading': '正在读取目录…',
+      'addWorkspace.empty': '当前目录没有子文件夹',
+      'addWorkspace.parent': '上一级',
+      'addWorkspace.home': '主目录',
+      'addWorkspace.pickerUnavailable': '目录选择器不可用',
+      'browser.title': '选择工作区目录',
+      'browser.home': '主目录',
+      'browser.newFolder': '新建文件夹',
+      'browser.folderName': '文件夹名称',
+      'browser.createIn': '在“{name}”中新建文件夹',
+      'browser.untitledFolder': '未命名文件夹',
+      'browser.create': '创建',
+      'browser.cancel': '取消',
+      'browser.open': '打开',
+      'browser.editPath': '编辑路径',
+      'browser.loading': '加载中…',
+      'browser.truncated': '文件夹过多，仅显示开头部分。',
+      'browser.showHidden': '显示隐藏文件',
+      'status.running': '进行中',
+      'status.subagentsRunning.one': '{n} 个子智能体运行中',
+      'status.subagentsRunning.other': '{n} 个子智能体运行中',
+      'status.idle': '空闲',
+      'status.waitingApproval': '等待审批',
+      'status.planReview': '计划待审',
+      'status.waitingAnswer': '等待回答',
+      'status.compact.approval': '待审批',
+      'status.compact.planReview': '计划待审',
+      'status.compact.answer': '待回答',
+      'status.compact.subagents': '子代理运行中',
+      'status.completed': '已完成',
+      'sessions.expand': '展开其余 {n} 个会话',
+      'sessions.collapse': '收起',
+      'notice.workspaceAdded': '已添加工作区',
+      'search.open': '搜索会话',
+      'search.placeholder': '搜索会话',
+      'search.clear': '清除搜索',
+      'newSession': '新会话',
+      'newSession.aria': '在「{name}」中新建会话',
+      'workspace.expand': '展开工作区',
+      'workspace.collapse': '收起工作区',
+      'workspace.menu': '工作区操作',
+      'workspace.hideArchived': '隐藏已归档',
+      'workspace.sortByTime': '按时间顺序排列',
+      'workspace.rename': '重命名工作区',
+      'workspace.delete': '删除工作区',
+      'workspace.deleteConfirm': '确定删除工作区「{name}」？会话不会被删除。',
+      'workspace.sortedByTime': '已按时间顺序排列',
+      'workspace.renamed': '已重命名工作区',
+      'workspace.deleted': '已删除工作区',
+      'workspace.renameFailed': '重命名失败：{reason}',
+      'workspace.deleteFailed': '删除失败：{reason}',
+      'view.options': '视图选项',
+      'view.grouped': '分组视图',
+      'view.official': '原版视图',
+      'view.expandAllGroups': '展开所有分组',
+      'view.collapseAllGroups': '折叠所有分组',
+      'view.expandAllWorkspaces': '展开所有工作区',
+      'view.collapseAllWorkspaces': '折叠所有工作区',
+      'view.workspaceLayout': '工作区划分',
+      'view.workspaceLayout.workspace': '工作区',
+      'view.workspaceLayout.tree': '工作区树',
+      'view.workspaceLayout.flat': '单列表',
+      'sort.byTime': '按时间顺序排序',
+      'sort.byInitial': '按首字母排序',
+      'sort.done.time': '已按时间顺序排序',
+      'sort.done.initial': '已按首字母顺序排序',
+      'view.workspaceTree': '按工作区树划分',
+      'view.flatList': '单列表',
+      'view.resetOrder': '恢复自动排序',
+      'ungrouped': '未分组',
+      'group.defaultName': '组 {n}',
+      'group.aria': '分组：{name}',
+      'group.count': '{n}个会话',
+      'group.menu': '分组操作',
+      'group.newSession': '在分组中新建会话',
+      'group.rename': '重命名分组',
+      'group.color': '分组颜色',
+      'group.rgb': 'RGB',
+      'group.rgbTitle': '自定义 RGB 颜色',
+      'group.rgbApply': '应用',
+      'group.rgbCancel': '取消',
+      'group.rgbInvalid': '请输入 0–255 的整数',
+      'subagents.expand': '展开子代理',
+      'subagents.collapse': '收起子代理',
+      'subagents.label': '子代理',
+      'settings.nav': '会话数据',
+      'settings.title': '会话数据',
+      'settings.intro': '调整侧栏分组的显示方式。',
+      'settings.runningLight': '运行状态使用蓝色信号灯',
+      'settings.runningLightHint': '默认显示蓝色信号灯；关闭后使用转圈加载图标。',
+      'settings.pricing': '费用估算价格',
+      'settings.peak': '高峰',
+      'settings.offPeak': '空闲',
+      'settings.savePrices': '保存价格',
+      'settings.holidays': '法定节假日',
+      'settings.holidaysPlaceholder': '2026-10-01, 2026-10-02',
+      'settings.holidaysHint': '可选，YYYY-MM-DD 逗号分隔；这些日期按空闲时段计价。',
+      'settings.pricingHint': '默认填入 DeepSeek Flash 官方价格（2026-11，人民币 / 百万 tokens）；高峰为工作日 09:00–12:00、14:00–18:00（Asia/Shanghai）。缓存写没有独立官方价格，默认按未命中输入价（与其他 DSH 费用插件一致）。',
+      'settings.priceInput': '输入',
+      'settings.priceCacheRead': '缓存读',
+      'settings.priceCacheWrite': '缓存写',
+      'settings.priceOutput': '输出',
+      'data.open': '数据',
+      'data.activity': '活动',
+      'data.aggSum': '求和',
+      'data.aggAverage': '平均',
+      'data.aggregationHint': '组/工作区统计：活动、Token、费用求和；上下文按会话平均。',
+      'data.usage': 'Token',
+      'data.steps': '步',
+      'data.llmTime': '模型用时',
+      'data.toolTime': '工具用时',
+      'data.ttft': '首 token 平均',
+      'data.speed': '输出速度',
+      'data.reasoning': '推理',
+      'data.system': '系统',
+      'data.messages': '消息',
+      'data.remaining': '剩余',
+      'data.noBreakdown': '暂无上下文构成数据',
+      'data.toolNoHost': '工具数据暂不可用（需重启 DSH 加载 Host 接口）',
+      'data.toolHostUnavailable': '会话分组插件 Host bridge 未加载；请完整重启 DSH 后刷新页面。',
+      'data.toolReadError': '工具数据读取失败；Token 统计不受影响。',
+      'data.toolNonActive': '归档或非活跃会话不提供工具明细；Token 统计仍可用。',
+      'data.toolSkippedNonActive': '另有 {count} 个归档/非活跃会话未计入工具统计。',
+      'data.toolPartialError': '另有 {count} 个会话的工具数据读取失败。',
+      'data.toolNoVisible': '该活跃会话没有可见工具或调用记录。',
+      'data.title.session': '会话数据',
+      'data.title.group': '组数据',
+      'data.title.workspace': '工作区数据',
+      'data.group': '组',
+      'data.workspace': '工作区',
+      'data.close': '关闭',
+      'data.refresh': '刷新',
+      'data.tokens': 'Tokens',
+      'data.cacheHit': '缓存命中',
+      'data.cacheHint': '缓存命中 = 缓存读取 /（输入 + 缓存读取 + 缓存写入）',
+      'data.cost': '估算费用',
+      'data.models': '模型',
+      'data.modelTimeHint': '按模型选择时间段估算使用时长。',
+      'data.noTimeShort': '无时长',
+      'data.noUsageData': '缺少 Token 用量数据，无法显示准确统计。',
+      'data.partialUsage': '部分会话缺少 Token 数据，汇总不完整。',
+      'data.noStatsData': '缺少活动统计数据。',
+      'data.partialStats': '部分会话缺少活动统计，汇总不完整。',
+      'data.partialBreakdown': '部分会话缺少上下文构成，平均仅覆盖有数据的会话。',
+      'data.noCostUsage': '缺少 Token 用量，无法计算费用。',
+      'data.modelTimeUnavailable': '没有模型使用时长数据，仅显示最后已知模型。',
+      'data.modelTimePartial': '部分会话缺少模型使用时长，占比不完整。',
+      'data.toolSnapshot': '工具可见性来自会话请求头的历史快照，可能不是当前注册表。',
+      'data.incompleteHint': '部分数据缺失、不完整或为估算值；展开对应行查看说明。',
+      'data.fileSize': '会话文件',
+      'data.fileEvents': '事件数',
+      'data.fileSessions': '有数据会话',
+      'data.fileSizeHint': '压缩后的 session.v4.jsonl.zstd 磁盘大小。',
+      'data.fileSizeUnavailable': 'Host 未提供会话文件大小。',
+      'data.fileSizePartial': '部分会话缺少文件大小。',
+      'data.fileEventPartial': '部分会话缺少事件数。',
+      'data.peak': '高峰',
+      'data.offPeak': '空闲',
+      'data.peakSchedule': '高峰：工作日 09:00–12:00、14:00–18:00（Asia/Shanghai）',
+      'data.estimatedPeriod': '归档会话没有逐时段数据，费用按当前时段估算。',
+      'data.missingPeriodPrice': '部分时段未配置价格，无法计算完整费用。',
+      'data.costPartial': '部分会话缺少费用数据，总费用仅累计可计算的会话。',
+      'data.noPeriodData': '部分会话缺少逐时段 Token 数据，费用无法计算。',
+      'data.costDetails': '费用明细',
+      'data.price': '单价',
+      'data.amount': '金额',
+      'data.perMillion': '¥ / 百万 tokens',
+      'data.toolsAvailable': '已开放',
+      'data.toolsClosed': '未开放',
+      'data.noAvailableTools': '没有已开放的工具',
+      'data.noClosedTools': '没有未对该会话开放的工具',
+      'data.item': '项目',
+      'data.context': '上下文',
+      'data.sessions': '会话',
+      'data.turns': '轮次',
+      'data.tokenBreakdown': 'Token 明细',
+      'data.input': '输入',
+      'data.cacheRead': '缓存读',
+      'data.cacheWrite': '缓存写',
+      'data.output': '输出',
+      'data.tools': '工具',
+      'data.toolCalls': '调用',
+      'data.toolErrors': '失败',
+      'data.noTools': '暂无工具数据',
+      'data.toolsLiveOnly': '仅活跃会话提供工具明细；归档会话仍保留 Token 统计。',
+      'data.toolsScope': '列表包含全局注册表、当前会话可见的 scoped 工具和本会话调用记录；不包含其他 Agent 或预设的 scoped 工具。',
+      'data.noPrice': '未配置价格',
+      'data.priceHint': '在设置 → 会话分组中填写价格',
+      'data.loading': '加载中…',
+      'data.note': '数据来自会话日志，费用为估算值',
+      'group.collapse': '折叠分组',
+      'group.expand': '展开分组',
+      'group.dissolve': '解散分组',
+      'group.newSubgroup': '新建子分组',
+      'group.subgroupCreated': '已新建子分组',
+      'group.moveLabel': '移动到分组',
+      'group.moveToGroup': '移入「{name}」',
+      'group.moveOut': '移出分组',
+      'group.moved': '已移动分组',
+      'session.menu': '会话操作',
+      'session.pin': '置顶会话',
+      'session.unpin': '取消置顶',
+      'session.rename': '重命名',
+      'session.newGroup': '新建分组',
+      'session.removeFromGroup': '从分组中移出',
+      'session.moveToGroup': '移入「{name}」',
+      'session.archive': '归档会话',
+      'session.archived': '已归档',
+      'schedule.untitled': '未命名任务',
+      'schedule.mark': '有 {count} 个自动化任务',
+      'schedule.more': '还有 {count} 个任务',
+      'schedule.separator': ' · ',
+      'schedule.relative.soon': '即将',
+      'schedule.relative.minutes': '{n} 分钟后',
+      'schedule.relative.hours': '{n} 小时后',
+      'schedule.relative.days': '{n} 天后',
+      'schedule.freq.minutely': '每分钟',
+      'schedule.freq.hourly': '每小时',
+      'schedule.freq.daily': '每天',
+      'schedule.freq.weekly': '每周',
+      'schedule.freq.monthly': '每月',
+      'schedule.freq.custom': '定时',
+      'session.unarchive': '取消归档',
+      'session.fork': '分叉会话',
+      'session.copyId': '复制 Session ID',
+      'session.delete': '删除会话',
+      'delete.title': '删除会话',
+      'delete.current': '当前会话不能删除',
+      'delete.warning': '点击「永久删除」后立即执行，且无法恢复。',
+      'delete.willDo': '将执行',
+      'delete.willRemove': '删除会话日志、投影缓存和工作区引用',
+      'delete.willStop': '停止正在运行的会话及其子代理',
+      'delete.willCascade': '同时删除 {count} 个子代理会话',
+      'delete.checking': '正在检查会话…',
+      'delete.children': '同时删除 {count} 个子代理会话',
+      'delete.running': '会话仍在运行，停止后删除',
+      'delete.confirm': '我确认永久删除',
+      'delete.cancel': '取消',
+      'delete.action': '永久删除',
+      'delete.deleting': '删除中…',
+      'delete.done': '会话已删除',
+      'notice.grouped': '已放入分组',
+      'notice.ungrouped': '已移出分组',
+      'notice.groupDissolved': '已解散分组',
+      'notice.archived': '会话已归档',
+      'notice.reordered': '已调整顺序',
+      'notice.groupDepthLimit': '分组最多嵌套 3 层，无法继续拖入',
+      'notice.sessionCreated': '已新建会话',
+      'notice.newSessionFailed': '新建会话失败：{reason}',
+      'notice.sameWorkspace': '只能在本工作区内建立分组',
+      'notice.dropUngroup': '拖到此处移出分组',
+      'notice.copied': '已复制会话 ID',
+      'notice.copyFailed': '复制失败：{reason}',
+      'notice.archiveFailed': '归档失败：{reason}',
+      'notice.archiveFollowupFailed': '归档后续操作失败：{reason}',
+      'notice.archiveFollowupSettled': '归档后续操作已完成',
+      'notice.archiveFailedUnknown': '未知原因',
+      'notice.pinFailed': '置顶失败：{reason}',
+      'notice.renameFailed': '重命名失败：{reason}',
+      'notice.forkFailed': '分叉失败：{reason}',
+      'notice.addWorkspaceFailed': '添加工作区失败：{reason}',
+      'hint.drag': '拖动会话到另一个会话中段可成组；拖到上下边缘可调整顺序',
+      'untitled': '未命名',
+      'loading': '加载中…',
+      'time.now': '刚刚',
+      'time.minutes': '{n} 分钟',
+      'time.hours': '{n} 小时',
+      'time.days': '{n} 天',
+      'status.running': '正在运行',
+      'status.pending': '等待处理',
+      'status.done': '有未读完成',
+      'status.idle': '空闲',
+    };
+
+    const EN = {
+      'section.title': 'Workspaces',
+      'section.loading': 'Loading workspaces…',
+      'section.empty': 'No workspaces yet',
+      'section.emptySearch': 'No matching sessions',
+      'addWorkspace': 'Add workspace',
+      'addWorkspace.dialogTitle': 'Add workspace',
+      'addWorkspace.pathLabel': 'Absolute directory path',
+      'addWorkspace.pathPlaceholder': 'e.g. /home/user/project',
+      'addWorkspace.confirm': 'Add',
+      'addWorkspace.cancel': 'Cancel',
+      'addWorkspace.invalidPath': 'Enter an absolute path',
+      'addWorkspace.pickerTitle': 'Choose a workspace directory',
+      'addWorkspace.useThis': 'Use this directory',
+      'addWorkspace.loading': 'Reading directory…',
+      'addWorkspace.empty': 'No subfolders here',
+      'addWorkspace.parent': 'Up',
+      'addWorkspace.home': 'Home',
+      'addWorkspace.pickerUnavailable': 'Directory picker unavailable',
+      'browser.title': 'Select Workspace Directory',
+      'browser.home': 'Home',
+      'browser.newFolder': 'New folder',
+      'browser.folderName': 'Folder name',
+      'browser.createIn': 'New folder in “{name}”',
+      'browser.untitledFolder': 'Untitled folder',
+      'browser.create': 'Create',
+      'browser.cancel': 'Cancel',
+      'browser.open': 'Open',
+      'browser.editPath': 'Edit path',
+      'browser.loading': 'Loading…',
+      'browser.truncated': 'Too many folders to list; only the beginning is shown.',
+      'browser.showHidden': 'Show hidden files',
+      'status.running': 'Running',
+      'status.subagentsRunning.one': '{n} subagent running',
+      'status.subagentsRunning.other': '{n} subagents running',
+      'status.idle': 'Idle',
+      'status.waitingApproval': 'Waiting for approval',
+      'status.planReview': 'Plan awaiting review',
+      'status.waitingAnswer': 'Waiting for answer',
+      'status.compact.approval': 'Approval',
+      'status.compact.planReview': 'Plan review',
+      'status.compact.answer': 'Answer',
+      'status.compact.subagents': 'Subagent running',
+      'status.completed': 'Completed',
+      'sessions.expand': 'Show {n} more sessions',
+      'sessions.collapse': 'Show less',
+      'notice.workspaceAdded': 'Workspace added',
+      'search.open': 'Search sessions',
+      'search.placeholder': 'Search sessions',
+      'search.clear': 'Clear search',
+      'newSession': 'New session',
+      'newSession.aria': 'New session in {name}',
+      'workspace.expand': 'Expand workspace',
+      'workspace.collapse': 'Collapse workspace',
+      'workspace.menu': 'Workspace actions',
+      'workspace.hideArchived': 'Hide archived',
+      'workspace.sortByTime': 'Sort by time',
+      'workspace.rename': 'Rename workspace',
+      'workspace.delete': 'Delete workspace',
+      'workspace.deleteConfirm': 'Delete workspace “{name}”? Sessions are kept.',
+      'workspace.sortedByTime': 'Sorted by time',
+      'workspace.renamed': 'Workspace renamed',
+      'workspace.deleted': 'Workspace deleted',
+      'workspace.renameFailed': 'Rename failed: {reason}',
+      'workspace.deleteFailed': 'Delete failed: {reason}',
+      'view.options': 'View options',
+      'view.grouped': 'Grouped view',
+      'view.official': 'Original view',
+      'view.expandAllGroups': 'Expand all groups',
+      'view.collapseAllGroups': 'Collapse all groups',
+      'view.expandAllWorkspaces': 'Expand all workspaces',
+      'view.collapseAllWorkspaces': 'Collapse all workspaces',
+      'view.workspaceLayout': 'Workspace layout',
+      'view.workspaceLayout.workspace': 'Workspace',
+      'view.workspaceLayout.tree': 'Workspace tree',
+      'view.workspaceLayout.flat': 'Single list',
+      'sort.byTime': 'Sort by time',
+      'sort.byInitial': 'Sort by initial',
+      'sort.done.time': 'Sorted by time',
+      'sort.done.initial': 'Sorted by initial',
+      'view.workspaceTree': 'Group by workspace tree',
+      'view.flatList': 'Single list',
+      'view.resetOrder': 'Reset to automatic order',
+      'ungrouped': 'Ungrouped',
+      'group.defaultName': 'Group {n}',
+      'group.aria': 'Group: {name}',
+      'group.count': '{n} sessions',
+      'group.menu': 'Group actions',
+      'group.newSession': 'New session in group',
+      'group.rename': 'Rename group',
+      'group.color': 'Group color',
+      'group.rgb': 'RGB',
+      'group.rgbTitle': 'Custom RGB color',
+      'group.rgbApply': 'Apply',
+      'group.rgbCancel': 'Cancel',
+      'group.rgbInvalid': 'Enter integers from 0 to 255',
+      'subagents.expand': 'Show subagents',
+      'subagents.collapse': 'Hide subagents',
+      'subagents.label': 'Subagents',
+      'settings.nav': 'Session Data',
+      'settings.title': 'Session Data',
+      'settings.intro': 'Adjust how session groups are displayed in the sidebar.',
+      'settings.runningLight': 'Use a blue running light',
+      'settings.runningLightHint': 'Blue status light is on by default; turn it off to use the spinning loader.',
+      'settings.pricing': 'Cost estimate prices',
+      'settings.peak': 'Peak',
+      'settings.offPeak': 'Off-peak',
+      'settings.savePrices': 'Save prices',
+      'settings.holidays': 'Public holidays',
+      'settings.holidaysPlaceholder': '2026-10-01, 2026-10-02',
+      'settings.holidaysHint': 'Optional; comma-separated YYYY-MM-DD dates billed as off-peak.',
+      'settings.pricingHint': 'Defaults are the DeepSeek Flash official CNY prices (2026-11) per million tokens; peak is weekdays 09:00–12:00 and 14:00–18:00 Asia/Shanghai. Cache writes use the input rate when no separate price is published.',
+      'settings.priceInput': 'Input',
+      'settings.priceCacheRead': 'Cache read',
+      'settings.priceCacheWrite': 'Cache write',
+      'settings.priceOutput': 'Output',
+      'data.open': 'Data',
+      'data.activity': 'Activity',
+      'data.aggSum': 'sum',
+      'data.aggAverage': 'avg',
+      'data.aggregationHint': 'Group/workspace totals: activity, tokens, and cost are summed; context is averaged per session.',
+      'data.usage': 'Token',
+      'data.steps': 'Steps',
+      'data.llmTime': 'LLM time',
+      'data.toolTime': 'Tool time',
+      'data.ttft': 'Avg TTFT',
+      'data.speed': 'Output speed',
+      'data.reasoning': 'Reasoning',
+      'data.system': 'System',
+      'data.messages': 'Messages',
+      'data.remaining': 'Remaining',
+      'data.noBreakdown': 'No context breakdown data',
+      'data.toolNoHost': 'Tool data unavailable (restart DSH to load the Host API)',
+      'data.toolHostUnavailable': 'The session-groups Host bridge is not loaded; fully restart DSH and refresh the page.',
+      'data.toolReadError': 'Failed to read tool data; token totals are unaffected.',
+      'data.toolNonActive': 'Archived or inactive sessions do not provide tool details; token totals remain available.',
+      'data.toolSkippedNonActive': '{count} archived/inactive sessions were excluded from tool statistics.',
+      'data.toolPartialError': 'Tool data failed for {count} sessions.',
+      'data.toolNoVisible': 'This live session has no visible tools or tool calls.',
+      'data.title.session': 'Session data',
+      'data.title.group': 'Group data',
+      'data.title.workspace': 'Workspace data',
+      'data.group': 'Group',
+      'data.workspace': 'Workspace',
+      'data.close': 'Close',
+      'data.refresh': 'Refresh',
+      'data.tokens': 'Tokens',
+      'data.cacheHit': 'Cache hit',
+      'data.cacheHint': 'Cache hit = cache read / (input + cache read + cache write)',
+      'data.cost': 'Est. cost',
+      'data.models': 'Models',
+      'data.modelTimeHint': 'Usage time is estimated from model-selection intervals.',
+      'data.noTimeShort': 'no duration',
+      'data.noUsageData': 'Token usage data is unavailable; accurate totals cannot be shown.',
+      'data.partialUsage': 'Some sessions lack token data; the total is incomplete.',
+      'data.noStatsData': 'Activity statistics are unavailable.',
+      'data.partialStats': 'Some sessions lack activity statistics; the total is incomplete.',
+      'data.partialBreakdown': 'Some sessions lack a context breakdown; the average covers only sessions with data.',
+      'data.noCostUsage': 'Token usage is unavailable, so cost cannot be calculated.',
+      'data.modelTimeUnavailable': 'No model usage-time data; only the last known model is shown.',
+      'data.modelTimePartial': 'Some sessions lack model usage time; shares are incomplete.',
+      'data.toolSnapshot': 'Tool visibility comes from the historical request-header snapshot and may differ from the current registry.',
+      'data.incompleteHint': 'Some data is missing, incomplete, or estimated; expand the relevant row for details.',
+      'data.fileSize': 'Session file',
+      'data.fileEvents': 'Events',
+      'data.fileSessions': 'Sessions with data',
+      'data.fileSizeHint': 'Compressed on-disk size of session.v4.jsonl.zstd.',
+      'data.fileSizeUnavailable': 'The Host did not provide a session file size.',
+      'data.fileSizePartial': 'Some sessions lack file-size data.',
+      'data.fileEventPartial': 'Some sessions lack event counts.',
+      'data.peak': 'Peak',
+      'data.offPeak': 'Off-peak',
+      'data.peakSchedule': 'Peak: weekdays 09:00–12:00 and 14:00–18:00 Asia/Shanghai',
+      'data.estimatedPeriod': 'Archived sessions have no per-period data; cost is estimated using the current period.',
+      'data.missingPeriodPrice': 'Some periods have no configured price; the full cost cannot be calculated.',
+      'data.costPartial': 'Some sessions lack cost data; the total includes only sessions with calculable cost.',
+      'data.noPeriodData': 'Some sessions lack per-period token data, so cost cannot be calculated.',
+      'data.costDetails': 'Cost details',
+      'data.price': 'Price',
+      'data.amount': 'Amount',
+      'data.perMillion': '¥ / 1M tokens',
+      'data.toolsAvailable': 'Available',
+      'data.toolsClosed': 'Not available',
+      'data.noAvailableTools': 'No available tools',
+      'data.noClosedTools': 'No tools are withheld from this session',
+      'data.item': 'Item',
+      'data.context': 'Context',
+      'data.sessions': 'Sessions',
+      'data.turns': 'Turns',
+      'data.tokenBreakdown': 'Token breakdown',
+      'data.input': 'Input',
+      'data.cacheRead': 'Cache read',
+      'data.cacheWrite': 'Cache write',
+      'data.output': 'Output',
+      'data.tools': 'Tools',
+      'data.toolCalls': 'calls',
+      'data.toolErrors': 'errors',
+      'data.noTools': 'No tool data',
+      'data.toolsLiveOnly': 'Tool details are available for live sessions only; archived sessions keep token totals.',
+      'data.toolsScope': 'The list covers the global registry, scoped tools visible to this session, and this session’s call history; it does not include scoped tools from other agents or presets.',
+      'data.noPrice': 'No prices configured',
+      'data.priceHint': 'Set them in Settings → Session Groups',
+      'data.loading': 'Loading…',
+      'data.note': 'Data comes from the session log; costs are estimates',
+      'group.collapse': 'Collapse group',
+      'group.expand': 'Expand group',
+      'group.dissolve': 'Dissolve group',
+      'group.newSubgroup': 'New subgroup',
+      'group.subgroupCreated': 'Subgroup created',
+      'group.moveLabel': 'Move to group',
+      'group.moveToGroup': 'Move into “{name}”',
+      'group.moveOut': 'Move out of group',
+      'group.moved': 'Group moved',
+      'session.menu': 'Session actions',
+      'session.pin': 'Pin session',
+      'session.unpin': 'Unpin session',
+      'session.rename': 'Rename',
+      'session.newGroup': 'New group',
+      'session.removeFromGroup': 'Remove from group',
+      'session.moveToGroup': 'Move into “{name}”',
+      'session.archive': 'Archive session',
+      'session.archived': 'Archived',
+      'schedule.untitled': 'Untitled task',
+      'schedule.mark': '{count} scheduled tasks',
+      'schedule.more': '{count} more tasks',
+      'schedule.separator': ' · ',
+      'schedule.relative.soon': 'soon',
+      'schedule.relative.minutes': 'in {n} min',
+      'schedule.relative.hours': 'in {n} h',
+      'schedule.relative.days': 'in {n} d',
+      'schedule.freq.minutely': 'Every minute',
+      'schedule.freq.hourly': 'Hourly',
+      'schedule.freq.daily': 'Daily',
+      'schedule.freq.weekly': 'Weekly',
+      'schedule.freq.monthly': 'Monthly',
+      'schedule.freq.custom': 'Scheduled',
+      'session.unarchive': 'Unarchive session',
+      'session.fork': 'Fork session',
+      'session.copyId': 'Copy Session ID',
+      'session.delete': 'Delete session',
+      'delete.title': 'Delete session',
+      'delete.current': 'Current session cannot be deleted',
+      'delete.warning': 'Clicking “Delete permanently” runs immediately and cannot be undone.',
+      'delete.willDo': 'Will do',
+      'delete.willRemove': 'Delete the session log, projection cache, and workspace references',
+      'delete.willStop': 'Stop the running session and its subagents',
+      'delete.willCascade': 'Also delete {count} subagent sessions',
+      'delete.checking': 'Checking session…',
+      'delete.children': 'Also delete {count} subagent sessions',
+      'delete.running': 'Session is still running; stop it and delete',
+      'delete.confirm': 'I confirm permanent deletion',
+      'delete.cancel': 'Cancel',
+      'delete.action': 'Delete permanently',
+      'delete.deleting': 'Deleting…',
+      'delete.done': 'Session deleted',
+      'notice.grouped': 'Added to group',
+      'notice.ungrouped': 'Removed from group',
+      'notice.groupDissolved': 'Group dissolved',
+      'notice.archived': 'Session archived',
+      'notice.reordered': 'Order updated',
+      'notice.groupDepthLimit': 'Groups can be nested up to 3 levels',
+      'notice.sessionCreated': 'Session created',
+      'notice.newSessionFailed': 'Could not create session: {reason}',
+      'notice.sameWorkspace': 'Groups stay inside one workspace',
+      'notice.dropUngroup': 'Drop here to leave the group',
+      'notice.copied': 'Session ID copied',
+      'notice.copyFailed': 'Copy failed: {reason}',
+      'notice.archiveFailed': 'Archive failed: {reason}',
+      'notice.archiveFollowupFailed': 'Archive follow-up failed: {reason}',
+      'notice.archiveFollowupSettled': 'Archive follow-up completed',
+      'notice.archiveFailedUnknown': 'unknown reason',
+      'notice.pinFailed': 'Pin failed: {reason}',
+      'notice.renameFailed': 'Rename failed: {reason}',
+      'notice.forkFailed': 'Fork failed: {reason}',
+      'notice.addWorkspaceFailed': 'Could not add workspace: {reason}',
+      'hint.drag': 'Drop on a session middle to group; drop on its edge to reorder',
+      'untitled': 'Untitled',
+      'loading': 'Loading…',
+      'time.now': 'now',
+      'time.minutes': '{n}m',
+      'time.hours': '{n}h',
+      'time.days': '{n}d',
+      'status.running': 'Running',
+      'status.pending': 'Waiting for you',
+      'status.done': 'Unread completion',
+      'status.idle': 'Idle',
+    };
+
+    const FALLBACK = ZH;
+
+    // DeepSeek official CNY prices per 1M tokens (deepseek-flash, 2026-11).
+    // Cache writes have no separate published rate; use the cache-miss input rate.
+    const DEFAULT_DEEPSEEK_PRICING = {
+      peak: { input: 2, cacheRead: 0.04, cacheWrite: 2, output: 8 },
+      offPeak: { input: 1, cacheRead: 0.02, cacheWrite: 1, output: 4 },
+      currency: 'CNY',
+    };
+
+    function defaultDeepSeekPricing() {
+      return {
+        peak: { ...DEFAULT_DEEPSEEK_PRICING.peak },
+        offPeak: { ...DEFAULT_DEEPSEEK_PRICING.offPeak },
+        currency: 'CNY',
+      };
+    }
+
+
+    /* ── small helpers ─────────────────────────────────────────────── */
+
+    function interpolate(text, params) {
+      if (!params) return text;
+      return String(text).replace(/\{(\w+)\}/g, (match, name) =>
+        Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match,
+      );
+    }
+
+    function translate(key, params) {
+      const text = FALLBACK[key] ?? key;
+      return interpolate(text, params);
+    }
+
+    function loadPrefs() {
+      const empty = { groups: {}, collapsedWorkspaces: {}, manualOrders: {}, topOrders: {}, childOrders: {}, groupOrders: {}, hideArchived: true, workspaceTree: false, flatList: false, runningLight: true, pricing: defaultDeepSeekPricing() };
+      try {
+        const raw = window.localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          runningLightPreference = true;
+          return empty;
+        }
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') {
+          runningLightPreference = true;
+          return empty;
+        }
+        const groups = {};
+        if (parsed.groups && typeof parsed.groups === 'object') {
+          for (const [workspaceId, list] of Object.entries(parsed.groups)) {
+            if (!workspaceId || !Array.isArray(list)) continue;
+            const clean = [];
+            for (const item of list) {
+              if (!item || typeof item !== 'object') continue;
+              if (typeof item.id !== 'string' || item.id.length === 0) continue;
+              const name = typeof item.name === 'string' && item.name.trim()
+                ? item.name.trim().slice(0, 60)
+                : '组';
+              const normalizedColor = typeof item.color === 'string' && /^#[0-9a-f]{6}$/i.test(item.color.trim())
+                ? item.color.trim().toLowerCase()
+                : null;
+              const color = normalizedColor
+                ?? GROUP_COLORS[clean.length % GROUP_COLORS.length];
+              const sessionIds = Array.isArray(item.sessionIds)
+                ? [...new Set(item.sessionIds.filter((id) => typeof id === 'string' && id.length > 0))]
+                : [];
+              clean.push({
+                id: item.id,
+                name,
+                color,
+                collapsed: item.collapsed === true,
+                parentGroupId: typeof item.parentGroupId === 'string' && item.parentGroupId.length > 0
+                  ? item.parentGroupId
+                  : undefined,
+                sessionIds,
+              });
+            }
+            if (clean.length > 0) groups[workspaceId] = sanitizeGroupParents(clean);
+          }
+        }
+        const collapsedWorkspaces = {};
+        if (parsed.collapsedWorkspaces && typeof parsed.collapsedWorkspaces === 'object') {
+          for (const [workspaceId, value] of Object.entries(parsed.collapsedWorkspaces)) {
+            if (workspaceId && value === true) collapsedWorkspaces[workspaceId] = true;
+          }
+        }
+        const manualOrders = {};
+        if (parsed.manualOrders && typeof parsed.manualOrders === 'object') {
+          for (const [workspaceId, order] of Object.entries(parsed.manualOrders)) {
+            if (!workspaceId || !Array.isArray(order)) continue;
+            const clean = [...new Set(order.filter((id) => typeof id === 'string' && id.length > 0))];
+            if (clean.length > 0) manualOrders[workspaceId] = clean;
+          }
+        }
+        const topOrders = {};
+        if (parsed.topOrders && typeof parsed.topOrders === 'object') {
+          for (const [workspaceId, order] of Object.entries(parsed.topOrders)) {
+            if (!workspaceId || !Array.isArray(order)) continue;
+            const clean = [...new Set(order.filter((key) => typeof key === 'string' && key.length > 0))];
+            if (clean.length > 0) topOrders[workspaceId] = clean;
+          }
+        }
+        const childOrders = {};
+        if (parsed.childOrders && typeof parsed.childOrders === 'object') {
+          for (const [workspaceId, order] of Object.entries(parsed.childOrders)) {
+            if (!workspaceId || !Array.isArray(order)) continue;
+            const clean = [...new Set(order.filter((id) => typeof id === 'string' && id.length > 0))];
+            if (clean.length > 0) childOrders[workspaceId] = clean;
+          }
+        }
+        const groupOrders = {};
+        if (parsed.groupOrders && typeof parsed.groupOrders === 'object') {
+          for (const [groupId, order] of Object.entries(parsed.groupOrders)) {
+            if (!groupId || !Array.isArray(order)) continue;
+            const clean = [...new Set(order.filter((key) => typeof key === 'string' && key.length > 0))];
+            if (clean.length > 0) groupOrders[groupId] = clean;
+          }
+        }
+        const parseRates = (raw) => {
+          const rates = {};
+          if (!raw || typeof raw !== 'object') return rates;
+          for (const key of ['input', 'cacheRead', 'cacheWrite', 'output']) {
+            const value = Number(raw[key]);
+            if (Number.isFinite(value) && value >= 0) rates[key] = value;
+          }
+          return rates;
+        };
+        let pricing = defaultDeepSeekPricing();
+        let pricingTouched = false;
+        if (parsed.pricing && typeof parsed.pricing === 'object') {
+          pricingTouched = parsed.pricing.touched === true;
+          if (parsed.pricing.peak || parsed.pricing.offPeak) {
+            pricing = {
+              peak: parseRates(parsed.pricing.peak),
+              offPeak: parseRates(parsed.pricing.offPeak),
+            };
+          } else {
+            // v0.6 flat prices: keep the same amount in both periods.
+            const legacy = parseRates(parsed.pricing);
+            pricing = { peak: { ...legacy }, offPeak: { ...legacy } };
+            if (Object.keys(legacy).length > 0) pricingTouched = true;
+          }
+          if (Array.isArray(parsed.pricing.holidays)) {
+            const holidays = [...new Set(parsed.pricing.holidays.filter((day) => typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day)))];
+            if (holidays.length > 0) pricing.holidays = holidays;
+          }
+          if (parsed.pricing.currency !== 'CNY') {
+            // v0.7 stored USD prices without a currency marker. Convert them
+            // to the official CNY price scale at the published 2026-11 ratio.
+            const usdToCny = 6.6667;
+            const convert = (rates) => Object.fromEntries(
+              Object.entries(rates).map(([key, value]) => [key, Math.round(Number(value) * usdToCny * 1e6) / 1e6]),
+            );
+            pricing.peak = convert(pricing.peak);
+            pricing.offPeak = convert(pricing.offPeak);
+          }
+          const hasRates = Object.keys(pricing.peak).length > 0 || Object.keys(pricing.offPeak).length > 0;
+          if (!hasRates && !pricingTouched) pricing = defaultDeepSeekPricing();
+          pricing.currency = 'CNY';
+          if (pricingTouched) pricing.touched = true;
+        }
+        const prefs = {
+          groups,
+          collapsedWorkspaces,
+          manualOrders,
+          topOrders,
+          childOrders,
+          groupOrders,
+          hideArchived: parsed.hideArchived !== false,
+          workspaceTree: parsed.workspaceTree === true && parsed.flatList !== true,
+          flatList: parsed.flatList === true,
+          runningLight: parsed.runningLight !== false,
+          pricing,
+        };
+        runningLightPreference = prefs.runningLight;
+        return prefs;
+      } catch {
+        runningLightPreference = true;
+        return empty;
+      }
+    }
+
+    function savePrefs(prefs) {
+      runningLightPreference = prefs?.runningLight === true;
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+      } catch {
+        /* view state is best-effort */
+      }
+    }
+
+    function setRunningLightPreference(enabled) {
+      const prefs = loadPrefs();
+      savePrefs({ ...prefs, runningLight: enabled === true });
+      try {
+        window.dispatchEvent(new Event(BRIDGE_EVENT));
+      } catch {
+        /* the view refreshes on next mount if the event is unavailable */
+      }
+    }
+
+    function projectionOf(list, sessionId, key) {
+      const values = list?.projectionsBySession?.[sessionId]?.values
+        ?? list?.byId?.[sessionId]?.projectionValues
+        ?? {};
+      return values[key];
+    }
+
+    function usageSummary(usage) {
+      const input = Number(usage?.uncachedInputTokens ?? usage?.inputTokens ?? 0) || 0;
+      const cacheRead = Number(usage?.cacheReadTokens ?? 0) || 0;
+      const cacheWrite = Number(usage?.cacheWriteTokens ?? 0) || 0;
+      const output = Number(usage?.outputTokens ?? 0) || 0;
+      const reasoning = Number(usage?.reasoningTokens ?? 0) || 0;
+      const total = input + cacheRead + cacheWrite + output;
+      const cacheBase = input + cacheRead + cacheWrite;
+      return {
+        input,
+        cacheRead,
+        cacheWrite,
+        output,
+        reasoning,
+        total,
+        cacheRate: cacheBase > 0 ? cacheRead / cacheBase : 0,
+      };
+    }
+
+    function periodUsage(bucket) {
+      return usageSummary({
+        uncachedInputTokens: bucket?.input,
+        cacheReadTokens: bucket?.cacheRead,
+        cacheWriteTokens: bucket?.cacheWrite,
+        outputTokens: bucket?.output,
+      });
+    }
+
+    function rateConfigured(rate) {
+      return Boolean(rate && Number.isFinite(rate.input) && Number.isFinite(rate.output));
+    }
+
+    function pricingConfigured(pricing) {
+      return rateConfigured(pricing?.peak) || rateConfigured(pricing?.offPeak);
+    }
+
+    function costOfUsage(usage, rates) {
+      if (!rateConfigured(rates)) return null;
+      const inputPrice = Number(rates.input) || 0;
+      const cacheReadPrice = Number(rates.cacheRead) || 0;
+      const cacheWritePrice = Number(rates.cacheWrite) || 0;
+      const outputPrice = Number(rates.output) || 0;
+      return (
+        usage.input / 1e6 * inputPrice
+        + usage.cacheRead / 1e6 * cacheReadPrice
+        + usage.cacheWrite / 1e6 * cacheWritePrice
+        + usage.output / 1e6 * outputPrice
+      );
+    }
+
+    function deepSeekPeakAt(time, holidays = []) {
+      const local = new Date((Number(time) || Date.now()) + 8 * 60 * 60 * 1000);
+      const day = local.getUTCDay();
+      const minutes = local.getUTCHours() * 60 + local.getUTCMinutes();
+      const dateKey = `${local.getUTCFullYear()}-${String(local.getUTCMonth() + 1).padStart(2, '0')}-${String(local.getUTCDate()).padStart(2, '0')}`;
+      if (day === 0 || day === 6 || holidays.includes(dateKey)) return false;
+      return (minutes >= 9 * 60 && minutes < 12 * 60) || (minutes >= 14 * 60 && minutes < 18 * 60);
+    }
+
+    function costOfPeriods(periods, pricing) {
+      let total = 0;
+      let any = false;
+      for (const [key, rates] of [['peak', pricing?.peak], ['offPeak', pricing?.offPeak]]) {
+        const usage = periods?.[key];
+        if (!usage || usage.total <= 0) continue;
+        const cost = costOfUsage(usage, rates);
+        if (cost === null) return null;
+        total += cost;
+        any = true;
+      }
+      return any ? total : (pricingConfigured(pricing) ? 0 : null);
+    }
+
+    function formatCompactNumber(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '—';
+      if (n >= 1e9) return `${(n / 1e9).toFixed(1).replace(/\.0$/, '')}B`;
+      if (n >= 1e6) return `${(n / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
+      if (n >= 1e3) return `${(n / 1e3).toFixed(1).replace(/\.0$/, '')}k`;
+      return String(Math.round(n));
+    }
+
+    function formatCost(value) {
+      if (value === null || !Number.isFinite(value)) return '—';
+      if (value > 0 && value < 0.0001) return '~<¥0.0001';
+      return `~¥${value.toFixed(value < 0.01 ? 4 : 2)}`;
+    }
+
+    function contextRateOf(pressure) {
+      const used = Number(pressure?.pressureTokens ?? pressure?.projectedTokens);
+      const window = Number(pressure?.contextWindow);
+      if (!Number.isFinite(used) || !Number.isFinite(window) || window <= 0) return null;
+      return { used, window, rate: Math.max(0, Math.min(1, used / window)) };
+    }
+
+    async function resolveBridgeAuth() {
+      const injected = window[BRIDGE_GLOBAL];
+      const path = injected && typeof injected.path === 'string' ? injected.path : BRIDGE_PATH;
+      try {
+        const response = await fetch(`${path}/config`, { cache: 'no-store' });
+        if (response.ok) {
+          const config = await response.json();
+          if (config && typeof config.token === 'string' && typeof config.path === 'string') {
+            return { path: config.path, token: config.token };
+          }
+        }
+      } catch {
+        /* fall back to the boot-time token; the Host may predate /config */
+      }
+      return injected && typeof injected.token === 'string' ? injected : null;
+    }
+
+    async function fetchLiveSessionData(sessionIds, force = false, holidays = []) {
+      const result = new Map();
+      const ids = [...new Set((sessionIds ?? []).filter((id) => typeof id === 'string' && id.length > 0))];
+      if (ids.length === 0) return { rows: result, bridge: true, failed: false };
+      const holidayKey = [...new Set((holidays ?? []).filter((day) => typeof day === 'string'))].sort().join(',');
+      const bridge = await resolveBridgeAuth();
+      if (!bridge) return { rows: result, bridge: false, failed: true };
+      let failed = false;
+      const now = Date.now();
+      const missing = ids.filter((id) => {
+        const cached = liveDataCache.get(id);
+        return force || !cached || cached.holidayKey !== holidayKey || now - cached.at > LIVE_DATA_TTL_MS;
+      });
+      for (const chunkStart of Array.from({ length: Math.ceil(missing.length / 100) }, (_, i) => i * 100)) {
+        const chunk = missing.slice(chunkStart, chunkStart + 100);
+        try {
+          const response = await fetch(`${bridge.path}/data`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              [BRIDGE_TOKEN_HEADER]: bridge.token,
+            },
+            body: JSON.stringify({ sessionIds: chunk, holidays }),
+          });
+          if (!response.ok) {
+            failed = true;
+            for (const id of chunk) {
+              liveDataCache.set(id, { at: Date.now(), holidayKey, data: { id, live: false, error: 'Host 数据接口返回错误' } });
+            }
+            continue;
+          }
+          const payload = await response.json();
+          const rows = Array.isArray(payload?.sessions) ? payload.sessions : [];
+          const seen = new Set();
+          for (const row of rows) {
+            if (!row || typeof row.id !== 'string') continue;
+            seen.add(row.id);
+            liveDataCache.set(row.id, { at: Date.now(), holidayKey, data: row });
+          }
+          for (const id of chunk) {
+            if (!seen.has(id)) liveDataCache.set(id, { at: Date.now(), holidayKey, data: { id, live: false } });
+          }
+        } catch {
+          failed = true;
+          for (const id of chunk) {
+            liveDataCache.set(id, { at: Date.now(), holidayKey, data: { id, live: false, error: 'Host 数据请求失败' } });
+          }
+        }
+      }
+      for (const id of ids) {
+        const cached = liveDataCache.get(id);
+        if (cached) result.set(id, cached.data);
+      }
+      return { rows: result, bridge: true, failed };
+    }
+
+    async function requestSessionDelete(payload) {
+      const auth = await resolveBridgeAuth();
+      if (!auth) throw new Error('会话分组插件 Host bridge 未加载；请完整重启 DSH');
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      let response;
+      try {
+        response = await fetch(`${auth.path}/delete`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            [BRIDGE_TOKEN_HEADER]: auth.token,
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (error && error.name === 'AbortError') throw new Error('Host 响应超时，请刷新页面后重试');
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+      const result = await response.json().catch(() => ({}));
+      if (!result || result.ok !== true) {
+        const error = new Error(result?.error || '删除失败');
+        error.code = result?.code;
+        error.details = result?.details;
+        throw error;
+      }
+      return result;
+    }
+
+    function mergeTools(target, tools) {
+      for (const tool of tools ?? []) {
+        if (!tool || typeof tool.name !== 'string' || !tool.name) continue;
+        const current = target.get(tool.name) ?? {
+          name: tool.name,
+          available: false,
+          calls: 0,
+          errors: 0,
+          sessions: 0,
+        };
+        current.available = current.available || tool.available === true;
+        current.calls += Number(tool.calls) || 0;
+        current.errors += Number(tool.errors) || 0;
+        current.sessions += 1;
+        target.set(tool.name, current);
+      }
+    }
+
+    function newGroupId() {
+      return 'g-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+    }
+
+    function updateGroups(prefs, workspaceId, groups) {
+      const next = { ...prefs.groups };
+      if (groups.length === 0) delete next[workspaceId];
+      else next[workspaceId] = groups;
+      return { ...prefs, groups: next };
+    }
+
+    function removeSessionFromGroups(prefs, workspaceId, sessionId) {
+      const groups = prefs.groups[workspaceId];
+      if (!Array.isArray(groups) || groups.length === 0) return prefs;
+      let changed = false;
+      const next = [];
+      for (const group of groups) {
+        if (!group.sessionIds.includes(sessionId)) {
+          next.push(group);
+          continue;
+        }
+        changed = true;
+        const sessionIds = group.sessionIds.filter((id) => id !== sessionId);
+        const hasChildren = groups.some((candidate) => candidate.parentGroupId === group.id);
+        if (sessionIds.length > 0 || hasChildren) next.push({ ...group, sessionIds });
+      }
+      if (!changed) return prefs;
+      const groupOrders = { ...(prefs.groupOrders ?? {}) };
+      const sessionKey = topKeyOfSession(sessionId);
+      for (const [groupId, order] of Object.entries(groupOrders)) {
+        if (!Array.isArray(order) || !order.includes(sessionKey)) continue;
+        const kept = order.filter((key) => key !== sessionKey);
+        if (kept.length > 0) groupOrders[groupId] = kept;
+        else delete groupOrders[groupId];
+      }
+      return updateGroups({ ...prefs, groupOrders }, workspaceId, next);
+    }
+
+    function setManualOrder(prefs, workspaceId, order) {
+      const manualOrders = { ...(prefs.manualOrders ?? {}) };
+      if (order.length === 0) delete manualOrders[workspaceId];
+      else manualOrders[workspaceId] = order;
+      return { ...prefs, manualOrders };
+    }
+
+    function setTopOrder(prefs, workspaceId, order) {
+      const topOrders = { ...(prefs.topOrders ?? {}) };
+      if (order.length === 0) delete topOrders[workspaceId];
+      else topOrders[workspaceId] = order;
+      return { ...prefs, topOrders };
+    }
+
+    function topKeyOfGroup(groupId) {
+      return 'g:' + groupId;
+    }
+
+    function topKeyOfSession(sessionId) {
+      return 's:' + sessionId;
+    }
+
+    const MODE_KEY = 'dsh.session-groups.view';
+    const UNGROUPED_KEY = '__ungrouped__';
+
+    /* ── scheduled tasks ─────────────────────────────────────────── */
+
+    const EMPTY_SCHEDULE_SNAPSHOT = Object.freeze({ records: [], settled: false, error: false });
+    const noScheduleSubscribe = () => () => {};
+    const getEmptyScheduleSnapshot = () => EMPTY_SCHEDULE_SNAPSHOT;
+
+    function scheduleTaskSessionId(task) {
+      if (!task || !task.target) return undefined;
+      if (task.target.kind === 'session') return task.target.sessionId;
+      if (task.target.kind === 'new_once') return task.target.sessionId;
+      return task.lastDelivery?.targetSessionId;
+    }
+
+    function scheduleTaskInvolves(task, sessionId) {
+      if (!task || task.status !== 'active') return false;
+      if (Array.isArray(task.involvedSessionIds) && task.involvedSessionIds.includes(sessionId)) return true;
+      return scheduleTaskSessionId(task) === sessionId;
+    }
+
+    function scheduleFrequencyText(task, t) {
+      const rule = typeof task?.rrule === 'string' ? task.rrule : '';
+      if (/FREQ=MINUTELY/.test(rule)) return t('schedule.freq.minutely');
+      if (/FREQ=HOURLY/.test(rule)) return t('schedule.freq.hourly');
+      if (/FREQ=DAILY/.test(rule)) return t('schedule.freq.daily');
+      if (/FREQ=WEEKLY/.test(rule)) return t('schedule.freq.weekly');
+      if (/FREQ=MONTHLY/.test(rule)) return t('schedule.freq.monthly');
+      return t('schedule.freq.custom');
+    }
+
+    function scheduleNextRun(task) {
+      const floor = task?.deliveryFloorEndsAt;
+      const scheduled = task?.scheduledAt;
+      if (typeof floor === 'string' && typeof scheduled === 'string'
+        && Date.parse(floor) > Date.parse(scheduled)) return floor;
+      return scheduled;
+    }
+
+    function scheduleRelativeText(timestamp, now, t) {
+      const diff = timestamp - now;
+      if (diff <= 0) return relativeTime(timestamp, now, t);
+      const minutes = Math.floor(diff / 60000);
+      if (minutes < 1) return t('schedule.relative.soon');
+      if (minutes < 60) return t('schedule.relative.minutes', { n: minutes });
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return t('schedule.relative.hours', { n: hours });
+      return t('schedule.relative.days', { n: Math.floor(hours / 24) });
+    }
+
+    function scheduleTimeText(task, now, t) {
+      const raw = scheduleNextRun(task);
+      const timestamp = typeof raw === 'string' ? Date.parse(raw) : NaN;
+      if (!Number.isFinite(timestamp)) return scheduleFrequencyText(task, t);
+      let absolute;
+      try {
+        absolute = new Intl.DateTimeFormat(undefined, {
+          month: 'numeric',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }).format(new Date(timestamp));
+      } catch {
+        absolute = new Date(timestamp).toLocaleString();
+      }
+      return `${scheduleFrequencyText(task, t)} · ${absolute}${t('schedule.separator')}${scheduleRelativeText(timestamp, now, t)}`;
+    }
+
+    /**
+     * Follow the Host schedule catalog only when the Remote services are
+     * available. The Sidebar owns this one read so rows do not each query.
+     */
+    function createScheduleCatalogSource(ctx) {
+      let snapshot = EMPTY_SCHEDULE_SNAPSHOT;
+      const listeners = new Set();
+      let disposed = false;
+      let inFlight = false;
+      const getRemote = () => {
+        try {
+          if (ctx && ctx.remote) return ctx.remote;
+          return typeof ctx?.get === 'function' ? ctx.get('remote') : undefined;
+        } catch {
+          return undefined;
+        }
+      };
+      const publish = (next) => {
+        snapshot = next;
+        for (const listener of [...listeners]) {
+          try { listener(); } catch { /* a stale row must not break the catalog */ }
+        }
+      };
+      const refresh = async () => {
+        if (disposed || inFlight) return;
+        const remote = getRemote();
+        const schedule = remote && remote.schedule;
+        if (!schedule || typeof schedule.catalog !== 'function') {
+          publish({ records: [], settled: true, error: false });
+          return;
+        }
+        inFlight = true;
+        try {
+          const result = await schedule.catalog();
+          if (disposed) return;
+          if (result && result.ok === true) {
+            publish({ records: Array.isArray(result.value) ? result.value : [], settled: true, error: false });
+          } else {
+            publish({ ...snapshot, error: true });
+          }
+        } catch {
+          if (!disposed) publish({ ...snapshot, error: true });
+        } finally {
+          inFlight = false;
+        }
+      };
+      const source = {
+        getSnapshot: () => snapshot,
+        subscribe: (listener) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+      };
+      const start = () => {
+        disposed = false;
+        refresh();
+        let offChanged = null;
+        let offReset = null;
+        const remote = getRemote();
+        try {
+          if (remote && typeof remote.$on === 'function') {
+            offChanged = remote.$on('schedule/changed', () => { void refresh(); });
+          }
+        } catch { /* schedule is optional */ }
+        try {
+          if (typeof ctx?.on === 'function') {
+            offReset = ctx.on('connection/reset', () => { void refresh(); });
+          }
+        } catch { /* connection reset is optional */ }
+        return () => {
+          disposed = true;
+          try { offChanged?.(); } catch { /* ignore */ }
+          try { offReset?.(); } catch { /* ignore */ }
+          listeners.clear();
+        };
+      };
+      return { ...source, start };
+    }
+
+    function createViewModeStore() {
+      let mode = false;
+      try {
+        mode = window.localStorage.getItem(MODE_KEY) === 'grouped';
+      } catch {
+        mode = false;
+      }
+      const listeners = new Set();
+      return {
+        getSnapshot: () => mode,
+        subscribe: (listener) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+        set: (next) => {
+          const grouped = next === true;
+          if (grouped === mode) return;
+          mode = grouped;
+          try {
+            window.localStorage.setItem(MODE_KEY, grouped ? 'grouped' : 'official');
+          } catch {
+            /* best effort */
+          }
+          for (const listener of [...listeners]) listener();
+        },
+      };
+    }
+
+    function ViewModeToggle(props) {
+      const { wide, t, modeStore } = props;
+      const grouped = React.useSyncExternalStore(modeStore.subscribe, modeStore.getSnapshot);
+      const tr = typeof t === 'function' ? t : translate;
+      const label = grouped ? tr('view.official') : tr('view.grouped');
+      const css = '.dsg-viewToggle{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}.dsg-viewToggle:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.dsg-viewToggle[aria-pressed=true]{color:var(--dsw-alias-state-business-primary)}';
+      return h(
+        React.Fragment,
+        null,
+        h('style', { key: 'style' }, css),
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'dsg-viewToggle' + (wide ? ' wide' : ''),
+            title: label,
+            'aria-label': label,
+            'aria-pressed': grouped,
+            onClick: () => modeStore.set(!grouped),
+          },
+          h(IconGroup, { width: wide ? 16 : 18, height: wide ? 16 : 18 }),
+        ),
+      );
+    }
+
+    function createGroup(prefs, workspaceId, sessionIds, makeName) {
+      const groups = prefs.groups[workspaceId] ?? [];
+      const group = {
+        id: newGroupId(),
+        name: makeName(groups.length),
+        color: GROUP_COLORS[groups.length % GROUP_COLORS.length],
+        collapsed: false,
+        parentGroupId: null,
+        sessionIds: [...new Set(sessionIds)],
+      };
+      return updateGroups(prefs, workspaceId, [...groups, group]);
+    }
+
+    function createGroupAt(prefs, workspaceId, sessionIds, makeName, anchorSessionId, topItems) {
+      const groups = prefs.groups[workspaceId] ?? [];
+      const group = {
+        id: newGroupId(),
+        name: makeName(groups.length),
+        color: GROUP_COLORS[groups.length % GROUP_COLORS.length],
+        collapsed: false,
+        parentGroupId: null,
+        sessionIds: [...new Set(sessionIds)],
+      };
+      let next = updateGroups(prefs, workspaceId, [...groups, group]);
+      if (!Array.isArray(topItems) || topItems.length === 0) return next;
+      const anchorKey = topKeyOfSession(anchorSessionId);
+      const memberKeys = new Set(group.sessionIds.map((sessionId) => topKeyOfSession(sessionId)));
+      const groupKey = topKeyOfGroup(group.id);
+      const order = [];
+      let inserted = false;
+      for (const item of topItems) {
+        if (item.key === anchorKey) {
+          order.push(groupKey);
+          inserted = true;
+          continue;
+        }
+        if (memberKeys.has(item.key)) continue;
+        order.push(item.key);
+      }
+      if (!inserted) order.push(groupKey);
+      next = setTopOrder(next, workspaceId, order);
+      return next;
+    }
+
+    function normalizeWorkspacePath(value) {
+      const path = typeof value === 'string' ? value : '';
+      const withSlashes = (/^[A-Za-z]:[/\\]/.test(path) || path.startsWith('\\\\'))
+        ? path.replaceAll('\\', '/')
+        : path;
+      return withSlashes.replace(/\/+$/, '');
+    }
+
+    function owningParentWorkspacePath(path, parentPaths) {
+      const child = normalizeWorkspacePath(path);
+      if (!child) return undefined;
+      let owner;
+      let ownerLength = -1;
+      for (const parentPath of parentPaths) {
+        const root = normalizeWorkspacePath(parentPath);
+        if (root && root.length > ownerLength && child !== root && child.startsWith(`${root}/`)) {
+          owner = parentPath;
+          ownerLength = root.length;
+        }
+      }
+      return owner;
+    }
+
+    function buildWorkspaceParentMap(workspaces) {
+      const entries = workspaces.filter((workspace) => (
+        typeof workspace.path === 'string' && workspace.path.length > 0
+      ));
+      const parentPaths = entries.map((workspace) => workspace.path);
+      const idByPath = new Map(entries.map((workspace) => [workspace.path, workspace.workspaceId]));
+      const parentByPath = new Map(entries.map((workspace) => [
+        workspace.path,
+        (() => {
+          const ownerPath = owningParentWorkspacePath(workspace.path, parentPaths);
+          return ownerPath === undefined ? undefined : idByPath.get(ownerPath);
+        })(),
+      ]));
+      const parents = new Map();
+      for (const workspace of workspaces) {
+        parents.set(
+          workspace.workspaceId,
+          typeof workspace.path === 'string' ? parentByPath.get(workspace.path) : undefined,
+        );
+      }
+      return parents;
+    }
+
+    function sanitizeGroupParents(groups) {
+      const byId = new Map(groups.map((group) => [group.id, group]));
+      const next = groups.map((group) => ({ ...group }));
+      for (const group of next) {
+        if (!group.parentGroupId || !byId.has(group.parentGroupId) || group.parentGroupId === group.id) {
+          group.parentGroupId = undefined;
+        }
+      }
+      for (const group of next) {
+        let depth = 1;
+        let parentId = group.parentGroupId;
+        const seen = new Set([group.id]);
+        while (parentId !== undefined) {
+          if (seen.has(parentId)) {
+            group.parentGroupId = undefined;
+            break;
+          }
+          seen.add(parentId);
+          depth += 1;
+          if (depth > 3) {
+            group.parentGroupId = undefined;
+            break;
+          }
+          parentId = byId.get(parentId)?.parentGroupId;
+        }
+      }
+      return next;
+    }
+
+    function pruneEmptyGroupLeaves(groups) {
+      let current = groups;
+      let changed = true;
+      while (changed) {
+        changed = false;
+        const parents = new Set(current.map((group) => group.parentGroupId).filter(Boolean));
+        const next = current.filter((group) => (
+          group.sessionIds.length > 0 || parents.has(group.id) || group.parentGroupId
+        ));
+        if (next.length !== current.length) {
+          current = next;
+          changed = true;
+        }
+      }
+      return current;
+    }
+
+    function groupDepth(groups, groupId) {
+      const byId = new Map(groups.map((group) => [group.id, group]));
+      let depth = 0;
+      let current = groupId;
+      const seen = new Set();
+      while (current != null && !seen.has(current)) {
+        seen.add(current);
+        depth += 1;
+        current = byId.get(current)?.parentGroupId;
+      }
+      return depth;
+    }
+
+    /* ── Host agent bridge ──────────────────────────────────────────── */
+
+    function bridgeSnapshot() {
+      if (typeof bridgeSnapshotProvider !== 'function') return null;
+      try {
+        const snapshot = bridgeSnapshotProvider();
+        if (!snapshot || snapshot.view !== 'grouped' || !Array.isArray(snapshot.workspaces)) {
+          return null;
+        }
+        return snapshot;
+      } catch {
+        return null;
+      }
+    }
+
+    function bridgeGroupColor(previous, group, index) {
+      if (group.color && /^#[0-9a-f]{6}$/i.test(group.color)) return group.color.toLowerCase();
+      if (previous && typeof previous.color === 'string' && /^#[0-9a-f]{6}$/i.test(previous.color)) {
+        return previous.color.toLowerCase();
+      }
+      return GROUP_COLORS[index % GROUP_COLORS.length];
+    }
+
+    /**
+     * Apply one complete workspace plan from the Host agent tool. The browser
+     * is the authority: it validates membership, unique assignment, and depth
+     * against the live workspace before replacing local group state.
+     */
+    function applyBridgePlan(plan) {
+      if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+        throw new Error('修改计划格式无效');
+      }
+      const workspaceId = typeof plan.workspaceId === 'string' ? plan.workspaceId.trim() : '';
+      if (!workspaceId) throw new Error('修改计划缺少 workspaceId');
+      const snapshot = bridgeSnapshot();
+      if (!snapshot) {
+        throw new Error('当前没有可用的分组视图。请先在侧栏切换到分组视图并保持页面打开。');
+      }
+      const workspace = snapshot.workspaces.find((item) => item && item.id === workspaceId);
+      if (!workspace) throw new Error(`未找到工作区 ${workspaceId}`);
+      const visibleSessions = Array.isArray(workspace.sessions)
+        ? workspace.sessions.filter((item) => item && typeof item.id === 'string')
+        : [];
+      const visibleIds = new Set(visibleSessions.map((item) => item.id));
+      const titleById = new Map(visibleSessions.map((item) => [item.id, item.title || item.id]));
+
+      const rawGroups = Array.isArray(plan.groups) ? plan.groups : null;
+      if (!rawGroups) throw new Error('修改计划缺少 groups 数组');
+      const ids = new Set();
+      const groups = [];
+      for (const raw of rawGroups) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+          throw new Error('分组计划格式无效');
+        }
+        const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+        if (!id) throw new Error('分组计划需要非空 id');
+        if (ids.has(id)) throw new Error(`分组 id 重复：${id}`);
+        ids.add(id);
+        const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+        if (!name) throw new Error(`分组 ${id} 需要非空名称`);
+        if (raw.sessionIds !== undefined && !Array.isArray(raw.sessionIds)) {
+          throw new Error(`分组 ${id} 的 sessionIds 格式无效`);
+        }
+        const sessionIds = raw.sessionIds ?? [];
+        const seen = new Set();
+        for (const sessionId of sessionIds) {
+          if (typeof sessionId !== 'string' || !visibleIds.has(sessionId)) {
+            throw new Error(`会话 ${String(sessionId)} 不属于工作区 ${workspaceId}`);
+          }
+          if (seen.has(sessionId)) throw new Error(`分组 ${id} 重复包含会话 ${sessionId}`);
+          seen.add(sessionId);
+        }
+        const parentGroupId = typeof raw.parentGroupId === 'string' && raw.parentGroupId.trim()
+          ? raw.parentGroupId.trim()
+          : undefined;
+        if (parentGroupId === id) throw new Error(`分组 ${id} 不能以自身为父组`);
+        groups.push({
+          id,
+          name,
+          color: raw.color,
+          collapsed: raw.collapsed === true,
+          parentGroupId,
+          sessionIds: sessionIds.slice(),
+        });
+      }
+
+      const byId = new Map(groups.map((group) => [group.id, group]));
+      for (const group of groups) {
+        if (group.parentGroupId !== undefined && !byId.has(group.parentGroupId)) {
+          throw new Error(`分组 ${group.id} 的父组不在计划中`);
+        }
+      }
+      for (const group of groups) {
+        let depth = 1;
+        let parentId = group.parentGroupId;
+        const seen = new Set([group.id]);
+        while (parentId !== undefined) {
+          if (seen.has(parentId)) throw new Error(`分组 ${group.id} 存在循环嵌套`);
+          seen.add(parentId);
+          depth += 1;
+          if (depth > 3) throw new Error(`分组 ${group.id} 超过 3 层嵌套`);
+          parentId = byId.get(parentId)?.parentGroupId;
+        }
+      }
+
+      const rawUngrouped = plan.ungroupedSessionIds === undefined ? [] : plan.ungroupedSessionIds;
+      if (!Array.isArray(rawUngrouped)) throw new Error('ungroupedSessionIds 格式无效');
+      const ungroupedSessionIds = [];
+      const assigned = new Set();
+      for (const group of groups) {
+        for (const sessionId of group.sessionIds) {
+          if (assigned.has(sessionId)) throw new Error(`会话 ${sessionId} 出现在多个位置`);
+          assigned.add(sessionId);
+        }
+      }
+      for (const sessionId of rawUngrouped) {
+        if (typeof sessionId !== 'string' || !visibleIds.has(sessionId)) {
+          throw new Error(`会话 ${String(sessionId)} 不属于工作区 ${workspaceId}`);
+        }
+        if (assigned.has(sessionId)) throw new Error(`会话 ${sessionId} 同时出现在分组和未分组中`);
+        assigned.add(sessionId);
+        ungroupedSessionIds.push(sessionId);
+      }
+      const missing = visibleSessions.filter((session) => !assigned.has(session.id));
+      if (missing.length > 0) {
+        const labels = missing.slice(0, 5).map((session) => titleById.get(session.id) || session.id).join('、');
+        throw new Error(`计划没有覆盖 ${missing.length} 个会话：${labels}${missing.length > 5 ? '…' : ''}`);
+      }
+
+      const prefs = loadPrefs();
+      const allStoredGroups = prefs.groups ?? {};
+      for (const [otherWorkspaceId, otherGroups] of Object.entries(allStoredGroups)) {
+        if (otherWorkspaceId === workspaceId || !Array.isArray(otherGroups)) continue;
+        for (const otherGroup of otherGroups) {
+          if (otherGroup && ids.has(otherGroup.id)) {
+            throw new Error(`分组 id ${otherGroup.id} 已被其他工作区使用，请换一个新 id`);
+          }
+        }
+      }
+      const oldGroups = prefs.groups[workspaceId] ?? [];
+      const previousById = new Map(oldGroups.map((group) => [group.id, group]));
+      const groupOrders = { ...(prefs.groupOrders ?? {}) };
+      for (const group of oldGroups) delete groupOrders[group.id];
+      const nextGroups = groups.map((group, index) => ({
+        id: group.id,
+        name: group.name,
+        color: bridgeGroupColor(previousById.get(group.id), group, index),
+        collapsed: group.collapsed === true,
+        parentGroupId: group.parentGroupId,
+        sessionIds: group.sessionIds.slice(),
+      }));
+      for (const group of nextGroups) {
+        const children = nextGroups
+          .filter((candidate) => candidate.parentGroupId === group.id)
+          .map((candidate) => topKeyOfGroup(candidate.id));
+        const order = [
+          ...group.sessionIds.map((sessionId) => topKeyOfSession(sessionId)),
+          ...children,
+        ];
+        if (order.length > 0) groupOrders[group.id] = order;
+        else delete groupOrders[group.id];
+      }
+
+      const topGroups = nextGroups
+        .filter((group) => !group.parentGroupId)
+        .map((group) => topKeyOfGroup(group.id));
+      const topOrders = { ...(prefs.topOrders ?? {}) };
+      const topOrder = [
+        ...topGroups,
+        ...ungroupedSessionIds.map((sessionId) => topKeyOfSession(sessionId)),
+      ];
+      if (topOrder.length > 0) topOrders[workspaceId] = topOrder;
+      else delete topOrders[workspaceId];
+      const manualOrders = { ...(prefs.manualOrders ?? {}) };
+      const childOrders = { ...(prefs.childOrders ?? {}) };
+      delete manualOrders[workspaceId];
+      delete childOrders[workspaceId];
+      const allGroups = { ...(prefs.groups ?? {}) };
+      if (nextGroups.length > 0) allGroups[workspaceId] = nextGroups;
+      else delete allGroups[workspaceId];
+      savePrefs({
+        ...prefs,
+        groups: allGroups,
+        groupOrders,
+        topOrders,
+        manualOrders,
+        childOrders,
+      });
+      try {
+        window.dispatchEvent(new Event(BRIDGE_EVENT));
+      } catch {
+        /* the local view refreshes on next mount if the event is unavailable */
+      }
+      return {
+        workspaceId,
+        workspaceTitle: workspace.title || workspace.path || workspaceId,
+        groups: nextGroups.map((group) => ({
+          id: group.id,
+          name: group.name,
+          color: group.color,
+          collapsed: group.collapsed,
+          parentGroupId: group.parentGroupId ?? null,
+          sessionIds: group.sessionIds.slice(),
+        })),
+        ungroupedSessionIds,
+        sessionCount: visibleSessions.length,
+      };
+    }
+
+    function bridgeConfig() {
+      try {
+        const config = window[BRIDGE_GLOBAL];
+        if (!config || typeof config !== 'object') return null;
+        if (typeof config.path !== 'string' || typeof config.token !== 'string') return null;
+        return config;
+      } catch {
+        return null;
+      }
+    }
+
+    async function bridgeResolveConfig() {
+      const existing = bridgeConfig();
+      if (existing) return existing;
+      try {
+        if (typeof fetch !== 'function') return null;
+        const response = await fetch('/dsh-session-groups-bridge/config', {
+          method: 'GET',
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+        if (!response.ok) return null;
+        const config = await response.json();
+        if (!config || typeof config.path !== 'string' || typeof config.token !== 'string') return null;
+        try {
+          window[BRIDGE_GLOBAL] = config;
+        } catch {
+          /* the global is only an optimization */
+        }
+        return config;
+      } catch {
+        return null;
+      }
+    }
+
+    async function bridgePost(config, endpoint, value) {
+      if (typeof fetch !== 'function') return;
+      const controller = typeof AbortController === 'function' ? new AbortController() : null;
+      const timer = controller ? window.setTimeout(() => controller.abort(), 8000) : null;
+      try {
+        await fetch(config.path + endpoint, {
+          method: 'POST',
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: {
+            'content-type': 'application/json',
+            'x-dsh-session-groups-token': config.token,
+          },
+          body: JSON.stringify(value),
+          signal: controller ? controller.signal : undefined,
+        });
+      } catch {
+        /* the Host side will time out if the page cannot answer */
+      } finally {
+        if (timer !== null) window.clearTimeout(timer);
+      }
+    }
+
+    async function bridgeHandleRequest(config, request) {
+      if (!request || typeof request.id !== 'string') return;
+      try {
+        let data;
+        if (request.kind === 'snapshot') {
+          const snapshot = bridgeSnapshot();
+          if (!snapshot) {
+            throw new Error('当前没有可用的分组视图。请先切换到分组视图并保持页面打开。');
+          }
+          data = snapshot;
+        } else if (request.kind === 'apply') {
+          data = applyBridgePlan(request.payload);
+        } else {
+          throw new Error('未知的 Host 请求');
+        }
+        await bridgePost(config, '/respond', { requestId: request.id, ok: true, data });
+      } catch (error) {
+        await bridgePost(config, '/respond', {
+          requestId: request.id,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    function startSessionGroupsBridge() {
+      let stopped = false;
+      let busy = false;
+      let timer = null;
+      const run = async () => {
+        if (stopped) return;
+        const config = await bridgeResolveConfig();
+        if (!config) {
+          timer = window.setTimeout(run, 900);
+          return;
+        }
+        // Only a mounted grouped view can answer snapshot/apply requests.
+        // Avoid claiming them from the official view or a rail-only page.
+        if (!bridgeSnapshot()) {
+          timer = window.setTimeout(run, 700);
+          return;
+        }
+        if (busy) {
+          timer = window.setTimeout(run, 300);
+          return;
+        }
+        busy = true;
+        try {
+          if (typeof fetch === 'function') {
+            const controller = typeof AbortController === 'function' ? new AbortController() : null;
+            const abortTimer = controller ? window.setTimeout(() => controller.abort(), 5000) : null;
+            try {
+              const response = await fetch(config.path + '/poll', {
+                method: 'GET',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'x-dsh-session-groups-token': config.token },
+                signal: controller ? controller.signal : undefined,
+              });
+              if (response.status === 403) {
+                try {
+                  delete window[BRIDGE_GLOBAL];
+                } catch {
+                  /* stale token is harmless; the next tick retries the public config */
+                }
+              } else if (response.ok) {
+                const body = await response.json();
+                const requests = Array.isArray(body?.requests) ? body.requests : [];
+                for (const request of requests) {
+                  await bridgeHandleRequest(config, request);
+                }
+              }
+            } catch {
+              /* Host may be restarting; retry on the next tick */
+            } finally {
+              if (abortTimer !== null) window.clearTimeout(abortTimer);
+            }
+          }
+        } finally {
+          busy = false;
+          if (!stopped) timer = window.setTimeout(run, 700);
+        }
+      };
+      run();
+      return () => {
+        stopped = true;
+        if (timer !== null) window.clearTimeout(timer);
+      };
+    }
+
+    function groupHeight(groups, groupId) {
+      const children = new Map();
+      for (const group of groups) {
+        if (!group.parentGroupId) continue;
+        const list = children.get(group.parentGroupId) ?? [];
+        list.push(group.id);
+        children.set(group.parentGroupId, list);
+      }
+      const visit = (id, seen) => {
+        if (seen.has(id)) return 1;
+        const nextSeen = new Set(seen);
+        nextSeen.add(id);
+        const descendants = children.get(id) ?? [];
+        if (descendants.length === 0) return 1;
+        return 1 + Math.max(...descendants.map((child) => visit(child, nextSeen)));
+      };
+      return visit(groupId, new Set());
+    }
+
+    function groupIsDescendant(groups, groupId, ancestorId) {
+      const byId = new Map(groups.map((group) => [group.id, group]));
+      let current = byId.get(groupId)?.parentGroupId;
+      const seen = new Set();
+      while (current != null && !seen.has(current)) {
+        if (current === ancestorId) return true;
+        seen.add(current);
+        current = byId.get(current)?.parentGroupId;
+      }
+      return false;
+    }
+
+    function canNestGroup(groups, sourceId, targetId) {
+      if (!targetId || sourceId === targetId) return false;
+      if (groupIsDescendant(groups, targetId, sourceId)) return false;
+      return groupDepth(groups, targetId) + groupHeight(groups, sourceId) <= 3;
+    }
+
+    function setGroupOrder(prefs, groupId, order) {
+      const groupOrders = { ...(prefs.groupOrders ?? {}) };
+      const clean = [...new Set(order)];
+      if (clean.length > 0) groupOrders[groupId] = clean;
+      else delete groupOrders[groupId];
+      return { ...prefs, groupOrders };
+    }
+
+    function resolveGroupOrder(prefs, groupId, sessionIds, childIds) {
+      const defaults = [
+        ...sessionIds.map((id) => topKeyOfSession(id)),
+        ...childIds.map((id) => topKeyOfGroup(id)),
+      ];
+      const saved = prefs.groupOrders?.[groupId];
+      if (!Array.isArray(saved) || saved.length === 0) return defaults;
+      const valid = new Set(defaults);
+      const seen = new Set();
+      const ordered = [];
+      for (const key of saved) {
+        if (!valid.has(key) || seen.has(key)) continue;
+        seen.add(key);
+        ordered.push(key);
+      }
+      for (const key of defaults) {
+        if (!seen.has(key)) ordered.push(key);
+      }
+      return ordered;
+    }
+
+    function defaultGroupOrder(groups, groupId) {
+      const group = groups.find((item) => item.id === groupId);
+      if (!group) return [];
+      return [
+        ...group.sessionIds.map((id) => topKeyOfSession(id)),
+        ...groups.filter((item) => item.parentGroupId === groupId).map((item) => topKeyOfGroup(item.id)),
+      ];
+    }
+
+    function createSubgroup(prefs, workspaceId, parentGroupId, sessionIds, makeName) {
+      const groups = prefs.groups[workspaceId] ?? [];
+      const parent = groups.find((group) => group.id === parentGroupId);
+      if (!parent || sessionIds.length < 2) return prefs;
+      const members = new Set(sessionIds);
+      const next = groups.map((group) => (
+        group.id === parentGroupId
+          ? { ...group, sessionIds: group.sessionIds.filter((id) => !members.has(id)) }
+          : group
+      ));
+      const group = {
+        id: newGroupId(),
+        name: makeName(next.length),
+        color: GROUP_COLORS[next.length % GROUP_COLORS.length],
+        collapsed: false,
+        parentGroupId,
+        sessionIds: [...new Set(sessionIds)],
+      };
+      let result = updateGroups(prefs, workspaceId, [...next, group]);
+      const parentOrder = prefs.groupOrders?.[parentGroupId];
+      if (Array.isArray(parentOrder)) {
+        const parentGroup = next.find((item) => item.id === parentGroupId);
+        const childIds = next.filter((item) => item.parentGroupId === parentGroupId).map((item) => item.id);
+        const order = resolveGroupOrder(prefs, parentGroupId, parentGroup?.sessionIds ?? [], childIds)
+          .filter((key) => (key.startsWith('g:')
+            ? key !== topKeyOfGroup(group.id)
+            : !members.has(key.slice(2))));
+        order.push(topKeyOfGroup(group.id));
+        result = setGroupOrder(result, parentGroupId, order);
+      }
+      return result;
+    }
+
+    function insertIntoGroup(prefs, workspaceId, groupId, sessionId, anchorId, position) {
+      const groups = prefs.groups[workspaceId];
+      if (!Array.isArray(groups)) return prefs;
+      let found = false;
+      const next = groups.map((group) => {
+        if (group.id !== groupId) return group;
+        found = true;
+        if (group.sessionIds.includes(sessionId)) return group;
+        const sessionIds = [...group.sessionIds];
+        let index = anchorId ? sessionIds.indexOf(anchorId) : -1;
+        if (index === -1) index = sessionIds.length;
+        else if (position === 'after') index += 1;
+        sessionIds.splice(index, 0, sessionId);
+        return { ...group, sessionIds };
+      });
+      if (!found) return prefs;
+      let result = updateGroups(prefs, workspaceId, next);
+      const target = next.find((group) => group.id === groupId);
+      const savedOrder = prefs.groupOrders?.[groupId];
+      if (target && Array.isArray(savedOrder)) {
+        const childIds = next.filter((group) => group.parentGroupId === groupId).map((group) => group.id);
+        const order = resolveGroupOrder(prefs, groupId, target.sessionIds, childIds)
+          .filter((key) => key !== topKeyOfSession(sessionId));
+        const anchorKey = anchorId ? topKeyOfSession(anchorId) : null;
+        let index = anchorKey ? order.indexOf(anchorKey) : -1;
+        if (index === -1) index = order.length;
+        else if (position === 'after') index += 1;
+        order.splice(index, 0, topKeyOfSession(sessionId));
+        result = setGroupOrder(result, groupId, order);
+      }
+      return result;
+    }
+
+    function patchGroup(prefs, workspaceId, groupId, patch) {
+      const groups = prefs.groups[workspaceId];
+      if (!Array.isArray(groups)) return prefs;
+      let changed = false;
+      const next = groups.map((group) => {
+        if (group.id !== groupId) return group;
+        changed = true;
+        return { ...group, ...patch };
+      });
+      if (!changed) return prefs;
+      return updateGroups(prefs, workspaceId, next);
+    }
+
+    function dissolveGroup(prefs, workspaceId, groupId) {
+      const groups = prefs.groups[workspaceId];
+      if (!Array.isArray(groups)) return prefs;
+      const target = groups.find((group) => group.id === groupId);
+      if (!target) return prefs;
+      const parentId = target.parentGroupId && groups.some((group) => group.id === target.parentGroupId)
+        ? target.parentGroupId
+        : null;
+      const promoted = groups.filter((group) => group.parentGroupId === groupId);
+      const next = groups
+        .filter((group) => group.id !== groupId)
+        .map((group) => {
+          if (group.parentGroupId === groupId) {
+            return { ...group, parentGroupId: parentId ?? undefined };
+          }
+          if (parentId && group.id === parentId) {
+            const sessionIds = [...group.sessionIds];
+            for (const sessionId of target.sessionIds) {
+              if (!sessionIds.includes(sessionId)) sessionIds.push(sessionId);
+            }
+            return { ...group, sessionIds };
+          }
+          return group;
+        });
+      let result = updateGroups(prefs, workspaceId, next);
+      const parentOrder = parentId ? prefs.groupOrders?.[parentId] : null;
+      if (Array.isArray(parentOrder)) {
+        const targetOrder = resolveGroupOrder(
+          prefs,
+          groupId,
+          target.sessionIds,
+          promoted.map((group) => group.id),
+        );
+        const replacement = targetOrder;
+        const nextParentOrder = [];
+        for (const key of parentOrder) {
+          if (key === topKeyOfGroup(groupId)) nextParentOrder.push(...replacement);
+          else if (!key.startsWith('g:') || next.some((group) => group.id === key.slice(2))) nextParentOrder.push(key);
+        }
+        for (const key of replacement) {
+          if (!nextParentOrder.includes(key)) nextParentOrder.push(key);
+        }
+        result = setGroupOrder(result, parentId, nextParentOrder);
+      }
+      const groupOrders = { ...(result.groupOrders ?? {}) };
+      delete groupOrders[groupId];
+      result = { ...result, groupOrders };
+      let order = (result.topOrders?.[workspaceId] ?? []).filter((key) => key !== topKeyOfGroup(groupId));
+      if (!parentId) {
+        for (const group of promoted) {
+          if (!order.includes(topKeyOfGroup(group.id))) {
+            order.push(topKeyOfGroup(group.id));
+          }
+        }
+      }
+      result = setTopOrder(result, workspaceId, order);
+      return result;
+    }
+
+    function pinnedFirst(sessionIds, pinnedSessionIds) {
+      if (!pinnedSessionIds || pinnedSessionIds.size === 0) return sessionIds;
+      const pinned = [];
+      const rest = [];
+      for (const id of sessionIds) {
+        if (pinnedSessionIds.has(id)) pinned.push(id);
+        else rest.push(id);
+      }
+      return [...pinned, ...rest];
+    }
+
+    function relativeTime(timestamp, now, t) {
+      if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) return '';
+      const diff = Math.max(0, now - timestamp);
+      const minutes = Math.floor(diff / 60000);
+      if (minutes < 1) return t('time.now');
+      if (minutes < 60) return t('time.minutes', { n: minutes });
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return t('time.hours', { n: hours });
+      const days = Math.floor(hours / 24);
+      return t('time.days', { n: days });
+    }
+
+
+    /* ── title marquee ─────────────────────────────────────────────── */
+
+    const MIN_TITLE_REVEAL_PX = 8;
+    const TITLE_MARQUEE_PX_PER_MS = 0.03;
+
+    function placeTitle(title, left, range) {
+      if (typeof title.scrollTo === 'function') title.scrollTo({ left, behavior: 'instant' });
+      else title.scrollLeft = left;
+      if (left > 0) title.dataset.scrolled = '';
+      else delete title.dataset.scrolled;
+      if (left < range) title.dataset.clipped = '';
+      else delete title.dataset.clipped;
+    }
+
+    function restTitle(title) {
+      if (typeof title.scrollTo === 'function') title.scrollTo({ left: 0, behavior: 'instant' });
+      else title.scrollLeft = 0;
+      delete title.dataset.scrolled;
+      delete title.dataset.clipped;
+      delete title.dataset.marquee;
+    }
+
+    function useTitleMarquee(titleRef) {
+      const frameRef = React.useRef(0);
+      const revealingRef = React.useRef(false);
+      React.useEffect(() => () => {
+        if (typeof window !== 'undefined') window.cancelAnimationFrame(frameRef.current);
+      }, []);
+      const enter = React.useCallback((event) => {
+        if (event && event.pointerType === 'touch') return;
+        const title = titleRef.current;
+        if (!title || revealingRef.current) return;
+        revealingRef.current = true;
+        title.dataset.marquee = '';
+        const range = title.scrollWidth - title.clientWidth;
+        if (range <= MIN_TITLE_REVEAL_PX) return;
+        if (typeof window === 'undefined') return;
+        let reduce = false;
+        try {
+          reduce = typeof window.matchMedia === 'function'
+            && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        } catch {
+          reduce = false;
+        }
+        if (reduce || typeof window.requestAnimationFrame !== 'function') {
+          placeTitle(title, range, range);
+          return;
+        }
+        window.cancelAnimationFrame(frameRef.current);
+        let previous;
+        let position = 0;
+        const step = (now) => {
+          position += previous === undefined ? 0 : (now - previous) * TITLE_MARQUEE_PX_PER_MS;
+          previous = now;
+          placeTitle(title, Math.min(position, range), range);
+          if (position < range) frameRef.current = window.requestAnimationFrame(step);
+        };
+        frameRef.current = window.requestAnimationFrame(step);
+      }, [titleRef]);
+      const leave = React.useCallback(() => {
+        revealingRef.current = false;
+        if (typeof window !== 'undefined') window.cancelAnimationFrame(frameRef.current);
+        const title = titleRef.current;
+        if (title) restTitle(title);
+      }, [titleRef]);
+      return React.useMemo(() => ({ enter, leave }), [enter, leave]);
+    }
+
+    function errorMessage(error) {
+      if (!error) return 'unknown';
+      if (typeof error === 'string') return error;
+      if (typeof error.message === 'string' && error.message.length > 0) return error.message;
+      if (error.rpcError && typeof error.rpcError.message === 'string') return error.rpcError.message;
+      try {
+        return JSON.stringify(error);
+      } catch {
+        return String(error);
+      }
+    }
+
+    function useNow(intervalMs) {
+      const [now, setNow] = React.useState(() => Date.now());
+      React.useEffect(() => {
+        const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
+        return () => window.clearInterval(timer);
+      }, [intervalMs]);
+      return now;
+    }
+
+    /* ── icons ─────────────────────────────────────────────────────── */
+
+    function icon(children, props) {
+      return h(
+        'svg',
+        {
+          width: 16,
+          height: 16,
+          viewBox: '0 0 24 24',
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: 1.8,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          'aria-hidden': 'true',
+          focusable: 'false',
+          ...(props ?? {}),
+        },
+        children,
+      );
+    }
+
+    const officialIcon = (children, props) => h(
+      'svg',
+      {
+        width: 16,
+        height: 16,
+        viewBox: '0 0 16 16',
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 1,
+        'aria-hidden': 'true',
+        focusable: 'false',
+        ...(props ?? {}),
+      },
+      children,
+    );
+
+    const IconChevron = (props) => icon(
+      h('path', { d: 'm9 5 7 7-7 7' }),
+      props,
+    );
+    // 原版工作区图标（16×16，strokeWidth 1）：收起=闭合文件夹，展开=打开文件夹。
+    const folderSvg = (props, children) => h(
+      'svg',
+      {
+        width: props.width ?? 16,
+        height: props.height ?? 16,
+        viewBox: '0 0 16 16',
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 1,
+        'aria-hidden': 'true',
+      },
+      children,
+    );
+    const IconFolderClose = (props = {}) => folderSvg(props, [
+      h('path', { key: 'f', d: 'M1.50439 3.11059C1.50439 2.55831 1.95211 2.1106 2.50439 2.1106H5.43389C5.67773 2.1106 5.91318 2.19969 6.09593 2.36113L7.71649 3.79265C7.89924 3.95409 8.1347 4.04319 8.3785 4.04319H13.4958C14.0481 4.04319 14.4958 4.4909 14.4958 5.04319V12.8894C14.4958 13.4417 14.0481 13.8894 13.4958 13.8894H2.50439C1.95211 13.8894 1.50439 13.4417 1.50439 12.8894V4.04319V3.11059Z' }),
+      h('path', { key: 'line', d: 'M3.63501 7.66614H12.3647' }),
+    ]);
+    const IconFolderOpen = (props = {}) => folderSvg(props, [
+      h('path', { key: 'a', d: 'M2.55912 7.93683C2.67584 7.49906 3.0723 7.19446 3.52536 7.19446H13.6491C14.3061 7.19446 14.7846 7.81725 14.6153 8.45209L13.4411 12.856C13.3244 13.2938 12.9279 13.5984 12.4748 13.5984H2.35113C1.69411 13.5984 1.21562 12.9756 1.38489 12.3407L2.55912 7.93683Z', fill: 'currentColor', opacity: 0.16, stroke: 'none' }),
+      h('path', { key: 'b', d: 'M13.6491 6.69446C14.6346 6.69453 15.3522 7.62895 15.0983 8.58118L13.9245 12.9845C13.7494 13.6412 13.1539 14.0988 12.4743 14.0988H2.35126C1.36574 14.0988 0.648153 13.1643 0.902044 12.212L2.07587 7.80774C2.25102 7.15128 2.84567 6.69455 3.52509 6.69446H13.6491ZM3.52509 7.69446C3.29865 7.69455 3.10004 7.84674 3.04169 8.06555L1.86786 12.4698C1.78345 12.7872 2.02285 13.0988 2.35126 13.0988H12.4743C12.7007 13.0988 12.8992 12.9463 12.9577 12.7277L14.1325 8.32336C14.2171 8.00598 13.9776 7.69453 13.6491 7.69446H3.52509Z', fill: 'currentColor', stroke: 'none' }),
+      h('path', { key: 'c', d: 'M4.7666 1.90137C5.13227 1.90144 5.48571 2.03525 5.75977 2.27734L7.27246 3.61328C7.36379 3.69382 7.48174 3.73828 7.60352 3.73828H12.3994C13.2276 3.73841 13.8993 4.41005 13.8994 5.23828V6.7168C13.8183 6.70327 13.735 6.69436 13.6494 6.69434H12.8994V5.23828C12.8993 4.96233 12.6754 4.73841 12.3994 4.73828H7.60352C7.23781 4.73828 6.88446 4.60438 6.61035 4.3623L5.09766 3.02637C5.00636 2.94576 4.88838 2.90144 4.7666 2.90137H2.0498C1.77366 2.90137 1.5498 3.12523 1.5498 3.40137V9.78223L0.902344 12.2119C0.648452 13.1642 1.36604 14.0986 2.35156 14.0986H2.0498C1.2214 14.0986 0.549838 13.427 0.549805 12.5986V3.40137C0.549805 2.57294 1.22138 1.90137 2.0498 1.90137H4.7666Z', fill: 'currentColor', stroke: 'none' }),
+    ]);
+    const IconPlus = (props) => icon(
+      [h('path', { key: 'h', d: 'M12 5v14' }), h('path', { key: 'v', d: 'M5 12h14' })],
+      props,
+    );
+    const IconSearch = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M6.58727 11.8586C9.55061 11.8586 11.9529 9.45637 11.9529 6.49304C11.9529 3.5297 9.55061 1.12744 6.58727 1.12744C3.62394 1.12744 1.22168 3.5297 1.22168 6.49304C1.22168 9.45637 3.62394 11.8586 6.58727 11.8586Z', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M10.2991 10.3933L14.7783 14.8725', stroke: 'currentColor' }),
+    ], props);
+    const IconSliders = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M2.3 5h5.85M12.05 5h1.65' }),
+      h('circle', { key: 'b', cx: '9.95', cy: '5', r: '1.45' }),
+      h('path', { key: 'c', d: 'M2.3 11h1.65M7.85 11h5.85' }),
+      h('circle', { key: 'd', cx: '5.75', cy: '11', r: '1.45' }),
+    ], { strokeLinecap: 'round', ...(props ?? {}) });
+    const IconWorkspaceAdd = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M5.54492 2.06738C5.91034 2.06754 6.26318 2.20149 6.53711 2.44336L7.94043 3.68164V4.7998C7.71462 4.74105 7.50367 4.63139 7.32617 4.47461L5.87598 3.19238C5.78477 3.11185 5.66658 3.06754 5.54492 3.06738H2.94922C2.67322 3.06738 2.44946 3.29145 2.44922 3.56738V12.4326C2.44927 12.7087 2.67311 12.9326 2.94922 12.9326H12.9326C13.2086 12.9325 13.4326 12.7086 13.4326 12.4326V8.53613H14.4326V12.4326C14.4326 13.2609 13.7609 13.9325 12.9326 13.9326H2.94922C2.12083 13.9326 1.44927 13.261 1.44922 12.4326V3.56738C1.44946 2.73916 2.12094 2.06738 2.94922 2.06738H5.54492Z', fill: 'currentColor', stroke: 'none' }),
+      h('path', { key: 'b', d: 'M9.75977 4.50208H14.5509', stroke: 'currentColor' }),
+      h('path', { key: 'c', d: 'M12.1492 6.89758L12.1492 2.10642', stroke: 'currentColor' }),
+    ], props);
+    const IconWorkspaceTree = (props) => officialIcon([
+      h('path', { key: 'box', d: 'M14 12.05c0 .8-.65 1.45-1.46 1.45H3.46C2.65 13.5 2 12.85 2 12.05v-8.1c0-.8.65-1.45 1.46-1.45h2.4c.49 0 .94.24 1.21.65l.5.73c.27.4.73.65 1.21.65h3.76c.8 0 1.46.65 1.46 1.45v6.02Z' }),
+      h('path', { key: 'branches', d: 'M8.7 8.1v3M11.2 8.1v3' }),
+    ], props);
+    const IconFlatList = (props) => officialIcon([
+      h('path', { key: 'lines', d: 'M6 3.5h7.5M6 8h7.5M6 12.5h7.5' }),
+      h('path', { key: 'dots', d: 'M2.6 3.5h.01M2.6 8h.01M2.6 12.5h.01' }),
+    ], props);
+    const IconNewChatCircle = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M2.37091 11.2501C1.58745 9.89288 1.32067 8.29835 1.61969 6.76006C1.91872 5.22177 2.76342 3.8433 3.99826 2.87846C5.2331 1.91362 6.77494 1.42737 8.33988 1.50925C9.90482 1.59113 11.3875 2.23562 12.5149 3.32406C13.6425 4.41269 14.3387 5.87206 14.4754 7.4334C14.612 8.99474 14.18 10.5529 13.2587 11.8209C12.3375 13.0888 10.9891 13.9813 9.46194 14.3337C8.18691 14.628 6.85895 14.5294 5.64989 14.0605C5.1712 13.8748 4.76962 13.4932 4.26534 13.3967C3.67413 13.2835 2.95257 13.5598 2.03794 14.3337', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M8 5V11', stroke: 'currentColor' }),
+      h('path', { key: 'c', d: 'M5 8H11', stroke: 'currentColor' }),
+    ], props);
+    const IconCheck = (props) => icon(
+      h('path', { d: 'M4 12.5 9.5 18 20 6' }),
+      props,
+    );
+    const IconTriangle = (props) => officialIcon(
+      h('path', { d: 'M5.5 4.5C5.5 4.40714 5.52586 4.31612 5.57467 4.23713C5.62349 4.15815 5.69334 4.09431 5.77639 4.05279C5.85945 4.01126 5.95242 3.99368 6.0449 4.00202C6.13738 4.01036 6.22572 4.04429 6.3 4.1L10.967 7.6C11.0291 7.64657 11.0795 7.70697 11.1142 7.77639C11.1489 7.84582 11.167 7.92238 11.167 8C11.167 8.07762 11.1489 8.15418 11.1142 8.22361C11.0795 8.29303 11.0291 8.35343 10.967 8.4L6.3 11.9C6.22572 11.9557 6.13738 11.9896 6.0449 11.998C5.95242 12.0063 5.85945 11.9887 5.77639 11.9472C5.69334 11.9057 5.62349 11.8419 5.57467 11.7629C5.52586 11.6839 5.5 11.5929 5.5 11.5V4.5Z', fill: 'currentColor', stroke: 'none' }),
+      props,
+    );
+    const IconEdit = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M8.85596 2.69971H4.19971C3.37141 2.69971 2.69992 3.37146 2.69971 4.19971V11.8003C2.69992 12.6285 3.37141 13.3003 4.19971 13.3003H11.8003C12.6283 13.2999 13.3001 12.6283 13.3003 11.8003V7.89893H14.3003V11.8003C14.3001 13.1806 13.1806 14.2999 11.8003 14.3003H4.19971C2.81913 14.3003 1.69992 13.1808 1.69971 11.8003V4.19971C1.69992 2.81918 2.81913 1.69971 4.19971 1.69971H8.85596V2.69971Z', fill: 'currentColor', stroke: 'none' }),
+      h('path', { key: 'b', d: 'M7.7849 8.23878L13.888 2.13574', stroke: 'currentColor' }),
+    ], props);
+    const IconSort = (props) => officialIcon([
+      h('path', { key: 'up', d: 'm5.1 6 2.9-2.9L10.9 6' }),
+      h('path', { key: 'down', d: 'm5.1 10 2.9 2.9 2.9-2.9' }),
+    ], props);
+    const IconSortAlpha = (props) => icon([
+      h('path', { key: 'a', d: 'M3.5 18L7.5 6.5L11.5 18M5.2 13.5H9.8' }),
+      h('path', { key: 'z', d: 'M14.5 6.5H20.5L14.5 18H20.5' }),
+    ], props);
+    const IconTrash = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M1.28149 3.88831H14.7187', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M5.41602 3.88833V2.47962C5.41602 2.29282 5.52492 2.11366 5.71876 1.98157C5.9126 1.84948 6.17551 1.77527 6.44964 1.77527H9.55053C9.82466 1.77527 10.0876 1.84948 10.2814 1.98157C10.4753 2.11366 10.5842 2.29282 10.5842 2.47962V3.88833', stroke: 'currentColor' }),
+      h('path', { key: 'c', d: 'M2.57349 3.88831L3.19366 13.2943C3.21937 13.5502 3.33952 13.7872 3.53065 13.9593C3.72178 14.1313 3.97016 14.2259 4.22729 14.2246H11.7728C12.0299 14.2259 12.2783 14.1313 12.4694 13.9593C12.6605 13.7872 12.7807 13.5502 12.8064 13.2943L13.4266 3.88831', stroke: 'currentColor' }),
+      h('path', { key: 'd', d: 'M6.44946 6.98926V11.1238', stroke: 'currentColor' }),
+      h('path', { key: 'e', d: 'M9.55054 6.98926V11.1238', stroke: 'currentColor' }),
+    ], props);
+    const IconClose = (props) => icon(
+      [h('path', { key: 'a', d: 'm6 6 12 12' }), h('path', { key: 'b', d: 'm18 6-12 12' })],
+      props,
+    );
+    const IconMore = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M3 9C3.55228 9 4 8.55228 4 8C4 7.44772 3.55228 7 3 7C2.44772 7 2 7.44772 2 8C2 8.55228 2.44772 9 3 9Z', fill: 'currentColor' }),
+      h('path', { key: 'b', d: 'M8 9C8.55228 9 9 8.55228 9 8C9 7.44772 8.55228 7 8 7C7.44772 7 7 7.44772 7 8C7 8.55228 7.44772 9 8 9Z', fill: 'currentColor' }),
+      h('path', { key: 'c', d: 'M13 9C13.5523 9 14 8.55228 14 8C14 7.44772 13.5523 7 13 7C12.4477 7 12 7.44772 12 8C12 8.55228 12.4477 9 13 9Z', fill: 'currentColor' }),
+    ], props);
+    const IconPin = (props) => icon(
+      h('path', { d: 'M9 4h6l-.8 5.2 3.3 3.3H6.5l3.3-3.3L9 4Zm3 8.5V20' }),
+      props,
+    );
+    const IconPinOutline = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M9.96976 1.70572L13.1554 3.93629L10.9019 8.12317L11.5158 11.605L10.7192 12.7427L2.52767 7.00693L3.3243 5.86922L6.80612 5.25528L9.96976 1.70572Z', stroke: 'currentColor', strokeLinejoin: 'round' }),
+      h('path', { key: 'b', d: 'M6.05285 9.47511C6.27284 9.16094 6.70586 9.08458 7.02003 9.30457C7.3342 9.52455 7.41055 9.95757 7.19057 10.2717L3.98587 14.4708L3.21223 13.9291L6.05285 9.47511Z', fill: 'currentColor', stroke: 'none' }),
+    ], props);
+    const IconPinFill = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M9.96976 1.70572L13.1554 3.93629L10.9019 8.12317L11.5158 11.605L10.7192 12.7427L2.52767 7.00693L3.3243 5.86922L6.80612 5.25528L9.96976 1.70572Z', fill: 'currentColor', stroke: 'currentColor', strokeLinejoin: 'round' }),
+      h('path', { key: 'b', d: 'M6.05285 9.47511C6.27284 9.16094 6.70586 9.08458 7.02003 9.30457C7.3342 9.52455 7.41055 9.95757 7.19057 10.2717L3.98587 14.4708L3.21223 13.9291L6.05285 9.47511Z', fill: 'currentColor', stroke: 'none' }),
+    ], props);
+    const IconArchive = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M13.5 2.5H2.5C1.94772 2.5 1.5 2.94772 1.5 3.5V4.5C1.5 5.05228 1.94772 5.5 2.5 5.5H13.5C14.0523 5.5 14.5 5.05228 14.5 4.5V3.5C14.5 2.94772 14.0523 2.5 13.5 2.5Z', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M2.5 5.5V13.5C2.5 13.7652 2.60536 14.0196 2.79289 14.2071C2.98043 14.3946 3.23478 14.5 3.5 14.5H12.5C12.7652 14.5 13.0196 14.3946 13.2071 14.2071C13.3946 14.0196 13.5 13.7652 13.5 13.5V5.5', stroke: 'currentColor' }),
+      h('path', { key: 'c', d: 'M6.5 9.5H9.5', stroke: 'currentColor' }),
+    ], props);
+    const IconArchiveOff = (props = {}) => {
+      const rawId = typeof React.useId === 'function' ? React.useId() : 'dsg-archive-off';
+      const maskId = 'dsg-archive-off-' + String(rawId).replace(/:/g, '');
+      return h(
+        'svg',
+        {
+          width: 16,
+          height: 16,
+          viewBox: '0 0 16 16',
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: 1,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          'aria-hidden': 'true',
+          focusable: 'false',
+          ...(props ?? {}),
+        },
+        h(
+          'mask',
+          { key: 'mask', id: maskId, maskUnits: 'userSpaceOnUse', x: '0', y: '0', width: '16', height: '16' },
+          h('rect', { key: 'bg', x: '0', y: '0', width: '16', height: '16', fill: 'white', stroke: 'none' }),
+          h('path', { key: 'slash', d: 'm2.2 1.3 11.6 12.8', stroke: 'black', strokeWidth: 4 }),
+        ),
+        h(
+          'g',
+          { key: 'body', mask: `url(#${maskId})` },
+          h('rect', { key: 'lid', x: '1.9', y: '2.1', width: '12.2', height: '3.4', rx: '1.1' }),
+          h('path', { key: 'box', d: 'M2.95 5.7v4.8a2.9 2.9 0 0 0 2.9 2.9h4.3a2.9 2.9 0 0 0 2.9-2.9V5.7' }),
+        ),
+        h('path', { key: 'slasher', d: 'm2.2 1.3 11.6 12.8' }),
+      );
+    };
+    const IconBranch = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M1.01503 8.0001L5.6964 8.0001C6.41913 8.0001 6.78049 8.0001 7.12115 7.91951C7.4232 7.84804 7.71233 7.73014 7.97821 7.57C8.27809 7.38939 8.5364 7.13669 9.05303 6.63129L11.3281 4.40564', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M1.01221 7.9999L5.6964 7.9999C6.41913 7.9999 6.78049 7.9999 7.12115 8.08049C7.4232 8.15196 7.71233 8.26986 7.97821 8.43C8.27809 8.61061 8.5364 8.86331 9.05303 9.36871L11.3281 11.5944', stroke: 'currentColor' }),
+      h('circle', { key: 'c', cx: '12.4502', cy: '3.3079', r: '1.56962', stroke: 'currentColor' }),
+      h('circle', { key: 'd', cx: '12.4502', cy: '12.6921', r: '1.56962', stroke: 'currentColor' }),
+    ], props);
+    const IconCopy = (props) => officialIcon([
+      h('rect', { key: 'a', x: '1.52075', y: '4.07373', width: '10.3932', height: '10.3932', rx: '2', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M11.9792 1.53296C13.36 1.53296 14.4792 2.65225 14.4792 4.03296V9.42847C14.4792 10.3756 13.9521 11.1987 13.1755 11.6228V10.3298C13.3652 10.0787 13.4792 9.7674 13.4792 9.42847V4.03296C13.4792 3.20453 12.8077 2.53296 11.9792 2.53296H6.58374C6.27966 2.53301 5.99684 2.6235 5.7605 2.77905H4.42358C4.85652 2.03463 5.66056 1.53304 6.58374 1.53296H11.9792Z', fill: 'currentColor', stroke: 'none' }),
+    ], props);
+    const IconData = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M2.25 2.25V13.75H13.75', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M5.25 10.5V7.5M8.25 10.5V4.75M11.25 10.5V6.25', stroke: 'currentColor' }),
+    ], props);
+    const IconGauge = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M2.2 12.5a5.8 5.8 0 1 1 11.6 0', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M8 12.5 10.4 8.1', stroke: 'currentColor' }),
+      h('circle', { key: 'c', cx: '8', cy: '12.5', r: '1', fill: 'currentColor', stroke: 'none' }),
+    ], props);
+    const IconDatabase = (props) => officialIcon([
+      h('ellipse', { key: 'a', cx: '8', cy: '3.7', rx: '5', ry: '2', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M3 3.7v4.2c0 1.1 2.2 2 5 2s5-.9 5-2V3.7', stroke: 'currentColor' }),
+      h('path', { key: 'c', d: 'M3 8v4.2c0 1.1 2.2 2 5 2s5-.9 5-2V8', stroke: 'currentColor' }),
+    ], props);
+    const IconContext = (props) => officialIcon([
+      h('circle', { key: 'a', cx: '8', cy: '8', r: '5.5', stroke: 'currentColor' }),
+      h('circle', { key: 'b', cx: '8', cy: '8', r: '2.3', stroke: 'currentColor' }),
+    ], props);
+    const IconStorage = (props) => officialIcon([
+      h('rect', { key: 'a', x: 2.5, y: 4.5, width: 11, height: 7, rx: 2, stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M4.5 8h5.5', stroke: 'currentColor' }),
+      h('circle', { key: 'c', cx: 12, cy: 8, r: 0.8, fill: 'currentColor', stroke: 'none' }),
+    ], props);
+    const IconModel = (props) => officialIcon([
+      h('rect', { key: 'a', x: 2.5, y: 3.5, width: 11, height: 9, rx: 2, stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M5 6.5h6M5 9.5h4', stroke: 'currentColor' }),
+    ], props);
+    const IconCoin = (props) => officialIcon([
+      h('circle', { key: 'a', cx: '8', cy: '8', r: '5.5', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M8 4.6v6.8M10.1 6c-.4-.8-1.2-1.2-2.1-1.2-1.2 0-2 .6-2 1.4 0 .9.8 1.2 2 1.5 1.2.3 2.1.6 2.1 1.5 0 .8-.9 1.4-2.1 1.4-.9 0-1.7-.4-2.1-1.2', stroke: 'currentColor' }),
+    ], props);
+    const IconWrench = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M9.6 2.5a3.5 3.5 0 0 0-4.2 4.2L2 10.1 3.9 12l3.4-3.4a3.5 3.5 0 0 0 4.2-4.2L9.4 6.5 7.5 4.6l2.1-2.1Z', stroke: 'currentColor' }),
+      h('circle', { key: 'b', cx: '3.2', cy: '12.8', r: '.7', fill: 'currentColor', stroke: 'none' }),
+    ], props);
+    const IconUngroup = (props) => icon(
+      [h('rect', { key: 'a', x: 4, y: 4, width: 7, height: 7, rx: 1.5 }),
+        h('rect', { key: 'b', x: 13, y: 13, width: 7, height: 7, rx: 1.5 }),
+        h('path', { key: 'c', d: 'M13 6h7M17 3l3 3-3 3' })],
+      props,
+    );
+    const IconGroup = (props) => icon(
+      [h('rect', { key: 'a', x: 4, y: 4, width: 16, height: 6, rx: 2 }),
+        h('rect', { key: 'b', x: 4, y: 14, width: 16, height: 6, rx: 2 })],
+      props,
+    );
+    const IconGroupAdd = (props) => officialIcon([
+      h('rect', { key: 'a', x: 2.5, y: 3.5, width: 11, height: 9, rx: 2, stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M8 6v4M6 8h4', stroke: 'currentColor' }),
+    ], props);
+    const IconGroupMove = (props) => officialIcon([
+      h('rect', { key: 'a', x: 2.5, y: 3.5, width: 11, height: 9, rx: 2, stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M1 8h5M4 6l2 2-2 2', stroke: 'currentColor' }),
+    ], props);
+
+    // 官方子代理图标（16×16，strokeWidth 1），路径取自 DSH primitives。
+    const IconSubagentGroup = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M6 8.25C7.51878 8.25 8.75 7.01878 8.75 5.5C8.75 3.98122 7.51878 2.75 6 2.75C4.48122 2.75 3.25 3.98122 3.25 5.5C3.25 7.01878 4.48122 8.25 6 8.25Z', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M1 14.5C1 11.5 3.5 10.25 6 10.25C8.5 10.25 11 11.5 11 14.5', stroke: 'currentColor' }),
+      h('path', { key: 'c', d: 'M10.5 2.9C11.65 3.35 12.45 4.35 12.45 5.5C12.45 6.65 11.65 7.65 10.5 8.1', stroke: 'currentColor' }),
+      h('path', { key: 'd', d: 'M12.4 10.6C13.9 11.3 15 12.6 15 14.5', stroke: 'currentColor' }),
+    ], props);
+    const IconSubagent = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M8 8.25C9.51878 8.25 10.75 7.01878 10.75 5.5C10.75 3.98122 9.51878 2.75 8 2.75C6.48122 2.75 5.25 3.98122 5.25 5.5C5.25 7.01878 6.48122 8.25 8 8.25Z', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M2.5 14.5C2.5 11.5 5.25 10.25 8 10.25C10.75 10.25 13.5 11.5 13.5 14.5', stroke: 'currentColor' }),
+    ], props);
+    const IconClock = (props) => officialIcon([
+      h('circle', { key: 'c', cx: '8', cy: '8', r: '5.5', fill: 'none', stroke: 'currentColor' }),
+      h('path', { key: 'h', d: 'M8 4.75V8l2.2 1.35' }),
+    ], props);
+
+
+    /* ── styles ────────────────────────────────────────────────────── */
+
+    const CSS = `
+      .dsg-toast{position:fixed;transform:translateX(-50%);z-index:80;max-width:min(320px,calc(100vw - 32px));box-sizing:border-box;padding:8px 12px;border-radius:8px;background:var(--dsw-alias-bg-elevated);color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);box-shadow:0 6px 20px rgba(0,0,0,.18);font-size:12px;line-height:18px;text-align:center;pointer-events:none}
+      .dsg-root{position:relative;display:flex;flex-direction:column;flex:1;min-height:0;gap:2px;color:var(--dsw-alias-label-primary);font-size:14px}
+      .dsg-header{display:flex;align-items:center;gap:2px;flex:none;height:36px;padding:0 2px 0 8px;color:var(--dsw-alias-label-tertiary)}
+      .dsg-title{flex:1;min-width:0;font-size:14px;font-weight:400;line-height:20px;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .dsg-iconBtn{width:28px;height:28px;flex:none;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+      .dsg-iconBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .dsg-iconBtn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+      .dsg-searchRow{display:flex;align-items:center;gap:4px;flex:none;height:36px;padding:0 2px 0 8px;margin-bottom:2px}
+      .dsg-searchInput{flex:1;min-width:0;height:28px;box-sizing:border-box;padding:0 9px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;outline:none}
+      .dsg-searchInput:focus{border-color:var(--dsw-alias-brand-primary)}
+      .dsg-searchInput::placeholder{color:var(--dsw-alias-label-tertiary)}
+      .dsg-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:1px 2px 14px;display:flex;flex-direction:column;gap:2px;scrollbar-width:thin;scrollbar-color:var(--dsw-alias-scrollbar-bg-l2) transparent;animation:dsg-wide-in 200ms var(--ds-ease-in-out, ease-in-out)}
+      @keyframes dsg-wide-in{from{opacity:0}}
+      @media (prefers-reduced-motion:reduce){.dsg-scroll{animation:none}}
+      .dsg-workspace{display:flex;flex-direction:column;gap:1px;margin-bottom:2px}
+      .dsg-wsHeader{display:flex;align-items:center;gap:7px;height:34px;margin:0 2px 0 var(--dsg-ws-row-indent,0px);padding:0 4px 0 7px;border-radius:7px;cursor:pointer;color:var(--dsw-alias-label-primary);flex:none}
+      .dsg-wsHeader:hover{background:var(--dsw-alias-interactive-bg-hover)}
+      .dsg-wsHeader.selected{background:var(--dsw-alias-interactive-bg-active,var(--dsw-alias-interactive-bg-hover));box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l2)}
+      .dsg-wsHeader.selected .dsg-folder{color:var(--dsw-alias-state-business-primary)}
+      .dsg-wsHeader.active .dsg-folder{color:var(--dsw-alias-state-business-primary)}
+      .dsg-wsHeader:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+      .dsg-folder{width:17px;height:17px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary)}
+      .dsg-wsChevron{display:none;width:17px;height:17px;flex:none;align-items:center;justify-content:center;color:var(--dsw-alias-label-tertiary)}
+      .dsg-wsChevron.open{transform:rotate(90deg)}
+      .dsg-wsHeader:hover .dsg-folder,.dsg-wsHeader:focus-within .dsg-folder{display:none}
+      .dsg-wsHeader:hover .dsg-wsChevron,.dsg-wsHeader:focus-within .dsg-wsChevron{display:inline-flex}
+      .dsg-wsActions{display:none;align-items:center;gap:15px;flex:none}
+      .dsg-wsHeader:hover .dsg-wsActions,.dsg-wsHeader:focus-within .dsg-wsActions{display:inline-flex}
+      .dsg-wsAction{width:16px;height:16px;padding:0;border:none;background:transparent;color:var(--dsw-alias-label-tertiary);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;border-radius:3px}
+      .dsg-wsAction:hover{color:var(--dsw-alias-label-primary)}
+      .dsg-wsStatuses{display:inline-flex;align-items:center;gap:7px;flex:none;margin-right:1px}
+      .dsg-wsStatusItem{display:inline-flex;align-items:center;gap:2px}
+      .dsg-wsStatusCount{font-size:10.5px;line-height:14px;font-weight:500;color:var(--dsw-alias-label-secondary)}
+      .dsg-wsName{flex:1;min-width:0;font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .dsg-wsBody{display:flex;flex-direction:column;gap:1px}
+      .dsg-group{display:flex;flex-direction:column;gap:1px;margin:2px 2px 0 calc(24px + var(--dsg-ws-indent,0px))}
+      .dsg-groupHeader{display:flex;align-items:center;gap:6px;height:30px;box-sizing:border-box;padding:0 5px 0 6px;border-radius:7px;cursor:pointer;flex:none;color:var(--dsw-alias-label-primary);background:color-mix(in srgb, var(--dsg-group-color) 11%, transparent)}
+      .dsg-groupHeader:hover{background:color-mix(in srgb, var(--dsg-group-color) 18%, transparent)}
+      .dsg-groupHeader.selected{box-shadow:inset 0 0 0 1.5px var(--dsg-group-color)}
+      .dsg-groupHeader:focus-visible{outline:2px solid var(--dsg-group-color);outline-offset:-2px}
+      .dsg-groupDrop{outline:1.5px dashed var(--dsw-alias-state-business-primary);outline-offset:-1px;background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent)!important}
+      .dsg-groupHeader.dsg-groupDragging{opacity:.65}
+      .dsg-groupHeader.dsg-dropTopBefore{box-shadow:inset 0 2px 0 var(--dsw-alias-state-business-primary)}
+      .dsg-groupHeader.dsg-dropTopAfter{box-shadow:inset 0 -2px 0 var(--dsw-alias-state-business-primary)}
+      .dsg-groupChevron{width:14px;height:14px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary);transition:transform .14s var(--ds-ease-in-out, ease)}
+      .dsg-groupChevron.open{transform:rotate(90deg)}
+      .dsg-groupDot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--dsg-group-color);box-shadow:0 0 0 2px color-mix(in srgb, var(--dsg-group-color) 22%, transparent)}
+      .dsg-groupSwatch{width:8px;height:8px;border-radius:2px;flex:none;background:var(--dsg-group-color)}
+      .dsg-groupStatuses{display:inline-flex;align-items:center;gap:7px;flex:none;margin-right:1px}
+      .dsg-groupStatusItem{display:inline-flex;align-items:center;gap:2px}
+      .dsg-groupStatusCount{font-size:10.5px;line-height:14px;font-weight:500;color:var(--dsw-alias-label-secondary)}
+      .dsg-groupName{flex:1;min-width:0;font-size:12.5px;font-weight:600;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .dsg-groupCount{flex:none;margin-left:auto;color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:14px;white-space:nowrap}
+      .dsg-groupActions{display:inline-flex;align-items:center;gap:6px;flex:none;max-width:0;overflow:hidden;opacity:0;transition:max-width .14s var(--ds-ease-in-out, ease), opacity .14s var(--ds-ease-in-out, ease)}
+      .dsg-groupHeader:hover .dsg-groupActions,.dsg-groupHeader:focus-within .dsg-groupActions{max-width:42px;opacity:1}
+      .dsg-groupBody{display:flex;flex-direction:column;gap:1px;margin-left:6px;padding-left:0;border-left:2px solid var(--dsg-group-color)}
+      .dsg-groupHeader,.dsg-groupBody,.dsg-groupDot,.dsg-groupSwatch{--dsg-group-color:var(--dsg-group-color-light)}
+      body[data-ds-dark-theme] .dsg-groupHeader,body[data-ds-dark-theme] .dsg-groupBody,body[data-ds-dark-theme] .dsg-groupDot,body[data-ds-dark-theme] .dsg-groupSwatch{--dsg-group-color:var(--dsg-group-color-dark,var(--dsg-group-color-light))}
+      body[data-ds-dark-theme] .dsg-groupHeader{background:color-mix(in srgb, var(--dsg-group-color) 20%, transparent)}
+      body[data-ds-dark-theme] .dsg-groupHeader:hover{background:color-mix(in srgb, var(--dsg-group-color) 30%, transparent)}
+      body[data-ds-dark-theme] .dsg-groupDot{box-shadow:0 0 0 2px color-mix(in srgb, var(--dsg-group-color) 30%, transparent)}
+
+      .dsg-groupBody>.dsg-group{margin-left:12px}
+      .dsg-groupBody>.dsg-sessionRow{padding-left:26px}
+      .dsg-groupBody>.dsg-sessionRow.hasStatus{padding-left:10px}
+      .dsg-wsBody>.dsg-sessionRow{margin:0 2px 0 calc(24px + var(--dsg-ws-indent,0px));padding-left:10px}
+      .dsg-groupBody.dsg-zoneDim{margin-left:6px}
+      .dsg-sessionOverflow{width:100%;box-sizing:border-box;height:28px;flex:none;padding:0 12px 0 26px;border:none;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;line-height:20px;text-align:left;cursor:pointer}
+      .dsg-sessionOverflow:hover{color:var(--dsw-alias-label-secondary)}
+      .dsg-wsBody>.dsg-sessionOverflow{margin:0 2px 0 calc(24px + var(--dsg-ws-indent,0px));padding-left:10px}
+      .dsg-statusSlot{width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:flex-start}
+      .dsg-leadingSlot{width:16px;height:20px;justify-content:center;gap:0}
+      .dsg-stateDot{position:relative;display:inline-block;flex:none}
+      .dsg-stateDot:after{content:"";position:absolute;inset:20%;border-radius:50%;background:currentColor}
+      .dsg-stateDot[data-state=done]{color:var(--dsw-alias-state-success-primary)}
+      .dsg-stateDot[data-state=warning]{color:var(--dsw-alias-state-warn-primary)}
+      .dsg-stateDot[data-state=error]{color:var(--dsw-alias-state-error-primary)}
+      .dsg-stateDot[data-state=idle]{color:var(--dsw-alias-state-idle-primary)}
+      .dsg-stateDot[data-state=running-light]{color:var(--dsw-alias-state-business-primary)}
+      .dsg-stateSpinner{flex:none;color:var(--dsw-alias-label-tertiary)}
+      .dsg-stateSpinnerMotion{transform-origin:center;animation:dsg-state-dot-spin 1.5s linear infinite}
+      .dsg-stateSpinnerTrack,.dsg-stateSpinnerArc{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+      .dsg-stateSpinnerTrack{opacity:.25}
+      .dsg-stateSpinnerArc{stroke-dasharray:12 150;animation:dsg-state-dot-dash 1.5s ease-in-out infinite}
+      @keyframes dsg-state-dot-spin{to{transform:rotate(360deg)}}
+      @keyframes dsg-state-dot-dash{0%{stroke-dasharray:12 150;stroke-dashoffset:0}50%{stroke-dasharray:24 150;stroke-dashoffset:-6}to{stroke-dasharray:12 150;stroke-dashoffset:0}}
+      @media(prefers-reduced-motion:reduce){.dsg-stateSpinnerMotion,.dsg-stateSpinnerArc{animation:none}.dsg-stateSpinnerArc{stroke-dasharray:18 150;stroke-dashoffset:-3}}
+      .dsg-visuallyHidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+      .dsg-sessionRow{display:flex;align-items:center;gap:7px;height:30px;box-sizing:border-box;padding:0 5px 0 8px;border-radius:7px;cursor:pointer;flex:none;position:relative;min-width:0;color:var(--dsw-alias-label-primary)}
+      .dsg-sessionRow:hover{background:var(--dsw-alias-interactive-bg-hover)}
+      .dsg-sessionRow.active{background:var(--dsw-alias-interactive-bg-hover)}
+      .dsg-sessionRow:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+      .dsg-sessionRow.dsg-dropBefore::before,.dsg-sessionRow.dsg-dropAfter::after{content:"";z-index:1;background:linear-gradient(55deg,transparent calc(50% - 1px),var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px),transparent calc(50% + 1px)) 0 0/5px 7px no-repeat,linear-gradient(125deg,transparent calc(50% - 1px),var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px),transparent calc(50% + 1px)) 0 5px/5px 7px no-repeat,linear-gradient(var(--dsw-alias-state-business-primary) 0 0) 4px 5px/calc(100% - 4px) 2px no-repeat;pointer-events:none;height:12px;position:absolute;left:0;right:4px}
+      .dsg-sessionRow.dsg-dropBefore::before{top:-7px}
+      .dsg-sessionRow.dsg-dropAfter::after{bottom:-7px}
+      .dsg-sessionRow.dsg-dropGroup{outline:2px dashed var(--dsw-alias-state-business-primary);outline-offset:-2px;background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent)}
+      .dsg-subagentToggle{width:16px;height:16px;flex:none;display:none;align-items:center;justify-content:center;padding:0;border:none;border-radius:4px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer}
+      .dsg-sessionRow.hasSubagents:hover .dsg-subagentToggle,.dsg-sessionRow.hasSubagents:focus-within .dsg-subagentToggle,.dsg-sessionRow.subagents-open .dsg-subagentToggle{display:inline-flex}
+      .dsg-subagentToggle:hover{color:var(--dsw-alias-label-primary)}
+      .dsg-subagentToggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+      .dsg-subagentList{display:flex;flex-direction:column;gap:1px;margin:0 2px 1px 34px;padding-left:4px;border-left:1px solid var(--dsw-alias-border-l1)}
+      .dsg-wsBody>.dsg-subagentList{margin-left:calc(38px + var(--dsg-ws-indent,0px))}
+      .dsg-groupBody>.dsg-subagentList{margin-left:26px}
+      .dsg-flatList>.dsg-subagentList{margin-left:38px}
+      .dsg-subagentRow{display:flex;align-items:center;gap:7px;height:26px;box-sizing:border-box;min-width:0;padding:0 6px 0 5px;border-radius:6px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;cursor:pointer}
+      .dsg-subagentRow:hover,.dsg-subagentRow:focus-visible{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);outline:none}
+      .dsg-subagentRow.disabled{opacity:.6;cursor:default}
+      .dsg-subagentRowIcon{flex:none;color:var(--dsw-alias-label-tertiary)}
+      .dsg-subagentStatusSlot{width:14px;height:14px;flex:none;display:inline-flex;align-items:center;justify-content:center}
+      .dsg-subagentRow.active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .dsg-subagentTitle{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .dsg-sessionRow.archived .dsg-titleText{color:var(--dsw-alias-label-caption)}
+      .dsg-titleText{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px;line-height:20px;letter-spacing:.005em}
+      .dsg-titleText[data-marquee]{text-overflow:clip}
+      .dsg-titleText[data-scrolled]{mask-image:linear-gradient(to right,transparent,#000 12px)}
+      .dsg-titleText[data-clipped]{mask-image:linear-gradient(to left,transparent,#000 12px)}
+      .dsg-titleText[data-scrolled][data-clipped]{mask-image:linear-gradient(to right,transparent,#000 12px,#000 calc(100% - 12px),transparent)}
+      .dsg-time{flex:none;margin-left:2px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px;white-space:nowrap}
+      .dsg-rowMore{width:22px;height:22px;flex:none;display:none;align-items:center;justify-content:center;padding:0;border:none;border-radius:5px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+      .dsg-sessionRow:hover .dsg-rowMore,.dsg-sessionRow:focus-within .dsg-rowMore{display:inline-flex}
+      @media (hover:none){.dsg-sessionRow .dsg-rowMore{display:inline-flex}.dsg-sessionRow .dsg-rowAction{display:none}}
+      .dsg-hoverCard{position:fixed;z-index:75;box-sizing:border-box;padding:12px 16px;border-radius:var(--dsw-radius-lg,12px);background:#2c2c2e;box-shadow:var(--dsw-shadow-lv3,0 8px 28px rgb(0 0 0 / .28));color:var(--dsw-alias-hovercard-label-primary,#fff);display:flex;flex-direction:column;gap:8px;pointer-events:auto}
+      .dsg-hoverTitle{font-size:14px;line-height:20px;font-weight:400;color:var(--dsw-alias-hovercard-label-primary,#fff);overflow-wrap:break-word}
+      .dsg-hoverPath{color:var(--dsw-alias-hovercard-label-secondary,rgb(255 255 255 / .72));font-size:12px;line-height:16px;overflow-wrap:anywhere;word-break:break-all}
+      .dsg-hoverTime{color:var(--dsw-alias-hovercard-label-secondary,rgb(255 255 255 / .72));font-size:12px;line-height:16px}
+      .dsg-hoverStatus{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-hovercard-label-tertiary,rgb(255 255 255 / .52));font-size:12px;line-height:20px}
+      .dsg-hoverArchived{color:var(--dsw-alias-hovercard-label-tertiary,rgb(255 255 255 / .52))}
+      .dsg-hoverTasks{display:flex;flex-direction:column;gap:8px}
+      .dsg-hoverTask{display:flex;align-items:flex-start;gap:8px;min-width:0}
+      .dsg-hoverTaskIcon{flex:none;display:inline-flex;align-items:center;height:16px;color:var(--dsw-alias-hovercard-label-secondary,rgb(255 255 255 / .72))}
+      .dsg-hoverTaskBody{display:flex;flex-direction:column;gap:2px;min-width:0}
+      .dsg-hoverTaskName{font-size:12px;line-height:16px;color:var(--dsw-alias-hovercard-label-primary,#fff);overflow-wrap:anywhere}
+      .dsg-hoverTaskTime{font-size:12px;line-height:16px;color:var(--dsw-alias-hovercard-label-secondary,rgb(255 255 255 / .72));overflow-wrap:anywhere}
+      .dsg-hoverTaskMore{font-size:12px;line-height:16px;color:var(--dsw-alias-hovercard-label-tertiary,rgb(255 255 255 / .52))}
+      .dsg-rowMore:hover{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary)}
+      .dsg-ungroupedZone{display:flex;flex-direction:column;gap:1px;min-height:4px;border-radius:7px;margin-top:1px;padding:0}
+      .dsg-ungroupedZone>.dsg-sessionRow{margin:0 2px 0 24px;padding-left:10px}
+      .dsg-ungroupedZone.dsg-zoneHint{min-height:30px;border:1px dashed var(--dsw-alias-border-l2);align-items:center;justify-content:center}
+      .dsg-ungroupedZone.dsg-zoneDrop{border-color:transparent;background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent)}
+      .dsg-ungroupedZone.dsg-zoneDropEnd{box-shadow:inset 0 2px 0 var(--dsw-alias-state-business-primary)}
+      .dsg-zoneText{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px;padding:6px 0}
+      .dsg-flatList{display:flex;flex-direction:column;gap:2px;padding:1px 0 8px}
+      .dsg-flatList>.dsg-sessionRow{margin:0 2px 0 24px;padding-left:10px}
+      .dsg-empty{padding:26px 16px;text-align:center;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;display:flex;flex-direction:column;align-items:center;gap:10px}
+      .dsg-emptyAction{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;cursor:pointer}
+      .dsg-emptyAction:hover{background:var(--dsw-alias-interactive-bg-hover)}
+      .dsg-viewToggle{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+      .dsg-viewToggle:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .dsg-viewToggle[aria-pressed=true]{color:var(--dsw-alias-state-business-primary)}
+      .dsg-viewToggle.wide{width:28px}
+      .dsg-modalBackdrop{position:fixed;inset:0;z-index:95;background:rgb(0 0 0 / .24);display:flex;align-items:flex-start;justify-content:center;padding-top:16vh}
+      .dsg-modal{width:380px;max-width:calc(100vw - 32px);box-sizing:border-box;padding:16px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-overlay);box-shadow:0 18px 48px rgb(0 0 0 / .24);color:var(--dsw-alias-label-primary)}
+      .dsg-modalTitle{font-size:14px;font-weight:600;line-height:20px;margin-bottom:14px}
+      .dsg-modalLabel{display:block;font-size:12px;line-height:16px;color:var(--dsw-alias-label-secondary);margin-bottom:6px}
+      .dsg-modalInput{width:100%;height:32px;box-sizing:border-box;padding:0 9px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;outline:none}
+      .dsg-modalInput:focus{border-color:var(--dsw-alias-state-business-primary)}
+      .dsg-modalInput:disabled{opacity:.6}
+      .dsg-modalError{margin-top:8px;color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:16px;overflow-wrap:break-word}
+      .dsg-modalActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:16px}
+      .dsg-modalButton{height:30px;padding:0 13px;border:1px solid var(--dsw-alias-border-l1);border-radius:7px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;cursor:pointer}
+      .dsg-modalButton:hover{background:var(--dsw-alias-interactive-bg-hover)}
+      .dsg-modalButton.primary{border-color:transparent;background:var(--dsw-alias-state-business-primary);color:#fff}
+      .dsg-modalButton.primary:hover{background:var(--dsw-alias-state-business-primary);opacity:.9}
+      .dsg-modalButton:disabled{opacity:.55;cursor:default}
+      .dsg-modal.dsg-picker{width:680px;height:min(500px,calc(100vh - 80px));display:flex;flex-direction:column}
+      .dsg-pickerPathRow{display:flex;align-items:center;gap:6px;flex:none;margin-bottom:8px}
+      .dsg-pickerPathInput{flex:1;min-width:0;height:30px;box-sizing:border-box;padding:0 9px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12.5px;outline:none}
+      .dsg-pickerPathInput:focus{border-color:var(--dsw-alias-state-business-primary)}
+      .dsg-pickerIconButton{width:30px;height:30px;flex:none;display:inline-flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--dsw-alias-border-l1);border-radius:7px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;font-size:14px;cursor:pointer}
+      .dsg-pickerIconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .dsg-pickerIconButton:disabled{opacity:.4;cursor:default}
+      .dsg-pickerCrumbs{display:flex;align-items:center;gap:2px;flex-wrap:nowrap;overflow-x:auto;flex:none;padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid var(--dsw-alias-border-l1);scrollbar-width:thin}
+      .dsg-pickerCrumb{flex:none;max-width:150px;height:24px;padding:0 6px;border:none;border-radius:5px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+      .dsg-pickerCrumb:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .dsg-pickerCrumb.current{color:var(--dsw-alias-label-primary)}
+      .dsg-pickerCrumb:disabled{opacity:.6;cursor:default}
+      .dsg-pickerList{flex:1;min-height:0;overflow-y:auto;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);padding:4px;display:flex;flex-direction:column;gap:1px;scrollbar-width:thin}
+      .dsg-pickerEntry{display:flex;align-items:center;gap:8px;height:32px;padding:0 9px;border:none;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
+      .dsg-pickerEntry:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+      .dsg-pickerEntry:disabled{opacity:.6;cursor:default}
+      .dsg-pickerEntryIcon{width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary)}
+      .dsg-pickerEntryName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .dsg-pickerEmpty{display:flex;flex:1;align-items:center;justify-content:center;padding:18px;color:var(--dsw-alias-label-tertiary);font-size:12px;text-align:center}
+.dsgDir_dialog.dsgDir_dialog{--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);gap:0;width:min(680px,100%);height:min(500px,100dvh - 32px);padding:0}.dsgDir_editorScope{display:contents}.dsgDir_header{border-bottom:.5px solid var(--dsw-alias-border-l3);flex-direction:column;flex:none;gap:8px;padding:16px 14px 8px 24px;display:flex}.dsgDir_title{min-height:28px;color:var(--dsw-alias-label-primary);align-items:flex-end;margin:0;font-size:16px;font-weight:510;line-height:24px;display:flex}.dsgDir_crumbBar{box-sizing:border-box;border-radius:var(--dsw-radius-sm);border:1px solid #0000;align-items:center;gap:4px;min-height:24px;margin-left:-9px;padding:0 8px;display:flex}.dsgDir_crumbBar:has(.dsgDir_crumbEditZone:enabled:hover),.dsgDir_crumbBar:has(.dsgDir_crumbEditZone:focus-visible),.dsgDir_crumbBar:has(.dsgDir_pathInput){border-color:var(--dsw-alias-border-l2)}.dsgDir_millerRow{scrollbar-width:none;flex:1 1 0;align-items:stretch;gap:12px;min-height:0;display:flex;overflow-x:auto}.dsgDir_crumbTrail{scrollbar-width:none;flex:0 auto;align-items:center;gap:4px;min-width:0;display:flex;overflow-x:auto}.dsgDir_crumbSeat{flex:none;align-items:center;gap:4px;min-width:0;display:inline-flex}.dsgDir_crumb{text-overflow:ellipsis;white-space:nowrap;max-width:160px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0;font-size:13px;font-weight:500;line-height:20px;overflow:hidden}.dsgDir_crumb:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}.dsgDir_crumb:hover{color:var(--dsw-alias-label-primary)}.dsgDir_crumbChevron{color:var(--dsw-alias-label-tertiary);flex:none}.dsgDir_crumbEditZone{cursor:text;background:0 0;border:none;outline:none;flex:1 0 34px;justify-content:flex-end;align-items:center;min-width:34px;height:22px;padding:0;display:flex}.dsgDir_crumbEditGlyph{color:var(--dsw-alias-label-tertiary);flex:none}.dsgDir_crumbEditZone:enabled:hover .dsgDir_crumbEditGlyph,.dsgDir_crumbEditZone:focus-visible .dsgDir_crumbEditGlyph{color:var(--dsw-alias-label-primary)}.dsgDir_crumbEditZone:disabled{cursor:default}.dsgDir_crumbEditZone:disabled .dsgDir_crumbEditGlyph{color:var(--dsw-alias-label-caption)}.dsgDir_pathInput{box-sizing:border-box;min-width:0;height:22px;color:var(--dsw-alias-label-primary);background:0 0;border:none;outline:none;flex:1 1 0;padding:0;font-size:13px;line-height:20px}.dsgDir_content{flex-direction:column;flex:1 1 0;min-height:0;padding:16px 16px 16px 24px;display:flex;position:relative}.dsgDir_column{flex-direction:column;flex:1 1 0;gap:2px;min-width:256px;padding-right:8px;display:flex;overflow-y:auto}.dsgDir_divider{background:var(--dsw-alias-border-l3);flex:none;width:.5px}.dsgDir_rowSeat{flex:none;display:flex}.dsgDir_row{border-radius:var(--dsw-radius-sm);text-align:left;cursor:pointer;background:0 0;border:none;flex:none;align-items:center;gap:4px;width:100%;height:28px;padding:4px;display:flex}.dsgDir_row:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}.dsgDir_row:hover{background:var(--dsw-alias-interactive-bg-hover)}.dsgDir_rowSelected,.dsgDir_rowSelected:hover{background:var(--dsw-alias-interactive-bg-active,var(--dsw-alias-interactive-bg-hover))}.dsgDir_rowIcon{color:var(--dsw-alias-label-secondary);flex:none}.dsgDir_rowIconSelected{color:var(--dsw-alias-button-info-fill);flex:none}.dsgDir_rowName{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-label-primary);flex:1 1 0;font-size:13px;font-weight:500;line-height:20px;overflow:hidden}.dsgDir_rowChevron{color:var(--dsw-alias-label-tertiary);flex:none}.dsgDir_status,.dsgDir_error{padding:4px 120px 4px 4px;font-size:12px;line-height:18px}.dsgDir_status{color:var(--dsw-alias-label-secondary)}.dsgDir_error{color:var(--dsw-alias-state-error-primary)}.dsgDir_loadingFloat{background:var(--dsw-alias-bg-layer-2);padding:2px 8px;position:absolute;bottom:8px;right:16px}.dsgDir_footerBar{border-top:.5px solid var(--dsw-alias-border-l3);flex-wrap:wrap;flex:none;align-items:center;gap:8px;padding:16px 24px;display:flex}.dsgDir_showHiddenToggle{color:var(--dsw-alias-label-secondary);cursor:pointer;white-space:nowrap;background:0 0;border:none;align-items:center;gap:4px;padding:0;font-size:13px;font-weight:500;line-height:20px;display:inline-flex}.dsgDir_showHiddenToggle:hover{color:var(--dsw-alias-label-primary)}.dsgDir_showHiddenToggle:disabled{color:var(--dsw-alias-label-caption);cursor:default}.dsgDir_showHiddenToggleActive{color:var(--dsw-alias-label-primary)}.dsgDir_footerGap{flex:1 1 0}.dsgDir_footerAction{min-width:72px}.dsgDir_createDialog.dsgDir_createDialog{gap:0;width:min(380px,100%);padding:0}.dsgDir_createBody{flex-direction:column;gap:12px;padding:22px 24px 20px;display:flex}.dsgDir_createTitle{color:var(--dsw-alias-label-primary);margin:0;font-size:16px;font-weight:510;line-height:24px}.dsgDir_createIn{color:var(--dsw-alias-label-primary);margin:0;font-size:14px;line-height:22px}.dsgDir_createInput{box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-lg);width:100%;height:44px;color:var(--dsw-alias-label-primary);background:0 0;outline:none;padding:7px 14px;font-size:14px;line-height:22px}.dsgDir_createInput::placeholder{color:var(--dsw-alias-label-caption)}.dsgDir_createActions{justify-content:flex-end;align-items:center;gap:8px;margin-top:8px;display:flex}
+
+      .dsgDir_backdrop{position:fixed;inset:0;z-index:96;display:flex;align-items:center;justify-content:center;padding:16px;background:rgb(0 0 0 / .3)}
+      .dsgDir_panel{position:relative;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--dsw-alias-border-l3);border-radius:12px;background:var(--dsw-alias-bg-overlay);box-shadow:0 24px 64px rgb(0 0 0 / .28);color:var(--dsw-alias-label-primary)}
+      .dsgDir_btn{box-sizing:border-box;height:32px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 14px;border:1px solid transparent;border-radius:8px;font:inherit;font-size:13px;font-weight:500;line-height:20px;cursor:pointer;white-space:nowrap}
+      .dsgDir_btn:disabled{opacity:.5;cursor:default}
+      .dsgDir_btnOutline{border-color:var(--dsw-alias-border-l2);background:transparent;color:var(--dsw-alias-label-primary)}
+      .dsgDir_btnOutline:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+      .dsgDir_btnPrimary{border-color:transparent;background:var(--dsw-alias-state-business-primary);color:#fff}
+      .dsgDir_btnPrimary:hover:not(:disabled){opacity:.9}
+      .dsgDir_footerAction{min-width:72px}
+      .dsgDir_createBackdrop{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;padding:16px;background:rgb(0 0 0 / .24);border-radius:12px}
+      .dsgDir_createPanel{display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--dsw-alias-border-l3);border-radius:12px;background:var(--dsw-alias-bg-overlay);box-shadow:0 18px 48px rgb(0 0 0 / .28);color:var(--dsw-alias-label-primary)}
+      .dsg-rail{display:flex;flex-direction:column;align-items:center;gap:6px;padding:2px 0 8px}
+      .dsg-railBtn{width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);cursor:pointer}
+      .dsg-railBtn:hover{background:var(--dsw-alias-interactive-bg-hover)}
+      .dsg-railBtn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+      .dsg-editInput{flex:1;min-width:0;height:22px;box-sizing:border-box;padding:0 5px;border:1px solid var(--dsw-alias-brand-primary);border-radius:5px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12.5px;font-weight:600;outline:none}
+      .dsg-menu{position:fixed;z-index:80;min-width:214px;max-width:300px;max-height:312px;overflow-y:auto;padding:4px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-overlay);box-shadow:0 8px 28px rgb(0 0 0 / .22);color:var(--dsw-alias-label-primary)}
+      .dsg-menuItem{display:flex;align-items:center;gap:8px;width:100%;height:29px;box-sizing:border-box;padding:0 8px;border:none;border-radius:5px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12.5px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+      .dsg-menuItem:hover{background:var(--dsw-alias-interactive-bg-hover)}
+      .dsg-menuItem:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+      .dsg-menuItem.danger{color:var(--dsw-alias-state-error-primary)}
+      .dsg-menuItem.danger .dsg-menuIcon{color:var(--dsw-alias-state-error-primary)}
+      .dsg-menuItem.disabled{opacity:.45;cursor:default}
+      .dsg-submenuTrigger .dsg-submenuChevron{margin-left:auto;color:var(--dsw-alias-label-tertiary);font-size:15px;line-height:18px;flex:none}
+      .dsg-submenuTrigger.open{background:var(--dsw-alias-interactive-bg-hover)}
+      .dsg-submenu{position:fixed;z-index:95;min-width:190px;max-width:280px;max-height:300px;overflow-y:auto;padding:4px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-overlay);box-shadow:0 8px 28px rgb(0 0 0 / .22);color:var(--dsw-alias-label-primary);scrollbar-width:thin}
+      .dsg-menuItem.danger:hover,.dsg-menuItem.danger:focus-visible{background:var(--dsw-alias-interactive-bg-hover-danger)}
+      .dsg-menuIcon{width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary)}
+      .dsg-menuLabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+      .dsg-menuCheck{flex:none;margin-left:12px;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-primary)}
+      .dsg-menuShortcut{flex:none;margin-left:12px;color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:14px;white-space:nowrap}
+      .dsg-rowAction{width:22px;height:22px;flex:none;display:none;align-items:center;justify-content:center;padding:0;border:none;border-radius:5px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+      .dsg-rowTrailing,.dsg-leadingSlot,.dsg-rowExternalActions{display:inline-flex;align-items:center;gap:4px;flex:none;color:var(--dsw-alias-label-tertiary)}
+      .dsg-leadingSlot:empty,.dsg-rowExternalActions:empty{display:none}
+      .dsg-sessionRow:hover .dsg-rowAction,.dsg-sessionRow:focus-within .dsg-rowAction{display:inline-flex}
+      .dsg-rowAction:hover{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary)}
+      .dsg-sessionRow:hover .dsg-time,.dsg-sessionRow:focus-within .dsg-time{display:none}
+      .dsg-menuLabelText{padding:4px 8px 2px;color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:14px;white-space:nowrap}
+      .dsg-menuField{display:flex;align-items:center;gap:8px;min-height:30px;padding:0 8px;color:var(--dsw-alias-label-primary);font-size:12.5px;white-space:nowrap}
+      .dsg-menuFieldLabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+      .dsg-layoutOptions{display:inline-flex;align-items:center;gap:2px;flex:none}
+      .dsg-layoutOption{display:inline-flex;align-items:center;gap:1px}
+      .dsg-layoutBtn{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;border-radius:5px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+      .dsg-layoutBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .dsg-layoutBtn[aria-pressed=true]{color:var(--dsw-alias-state-business-primary)}
+      .dsg-layoutBtn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+      .dsg-layoutCheck{width:12px;height:12px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-primary)}
+      .dsg-menuScroll{max-height:120px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--dsw-alias-scrollbar-bg-l2) transparent;margin:0 -2px;padding:0 2px}
+      .dsg-menuSeparator{height:1px;margin:4px 6px;background:var(--dsw-alias-border-l1)}
+      .dsg-swatches{display:flex;align-items:center;gap:6px;padding:3px 9px 6px;flex-wrap:wrap}
+      .dsg-swatch{width:17px;height:17px;padding:0;border-radius:50%;border:2px solid transparent;background:var(--dsg-swatch-color-light);cursor:pointer;flex:none}
+      body[data-ds-dark-theme] .dsg-swatch{background:var(--dsg-swatch-color-dark,var(--dsg-swatch-color-light))}
+      .dsg-rgbTrigger{height:17px;flex:none;padding:0 6px;border:1px solid var(--dsw-alias-border-l2);border-radius:5px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:9.5px;line-height:15px;letter-spacing:.03em;cursor:pointer}
+      .dsg-rgbTrigger:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .dsg-rgbTrigger.selected{border-color:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary)}
+      .dsg-rgbTrigger:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+      .dsg-rgbEditor{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:3px 9px 7px;border-top:1px solid var(--dsw-alias-border-l1)}
+      .dsg-rgbPreview{width:18px;height:18px;flex:none;border-radius:50%;border:1px solid var(--dsw-alias-border-l2);box-sizing:border-box}
+      .dsg-rgbFields{display:flex;align-items:center;gap:5px;flex:1;min-width:0}
+      .dsg-rgbField{display:flex;align-items:center;gap:3px;min-width:0;color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:14px}
+      .dsg-rgbInput{width:35px;height:22px;box-sizing:border-box;padding:0 3px;border:1px solid var(--dsw-alias-border-l2);border-radius:4px;background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;line-height:20px;text-align:center;outline:none}
+      .dsg-rgbInput:focus{border-color:var(--dsw-alias-state-business-primary)}
+      .dsg-rgbActions{display:flex;align-items:center;gap:4px;flex:none;margin-left:auto}
+      .dsg-rgbAction{height:22px;padding:0 8px;border:none;border-radius:4px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;line-height:22px;cursor:pointer}
+      .dsg-rgbAction:hover{background:var(--dsw-alias-interactive-bg-active)}
+      .dsg-rgbAction.primary{background:var(--dsw-alias-button-info-fill);color:#fff}
+      .dsg-rgbAction.primary:hover{filter:brightness(1.06)}
+      .dsg-rgbError{flex-basis:100%;color:var(--dsw-alias-state-error-primary);font-size:10.5px;line-height:14px;padding-left:24px}
+      .dsg-swatch.selected{border-color:var(--dsw-alias-label-primary);box-shadow:0 0 0 1px var(--dsw-alias-bg-overlay)}
+      .dsg-settingsPage{display:flex;flex-direction:column;gap:0;width:100%;max-width:760px;padding:4px 0 16px}
+      .dsg-settingsTitle{margin:0 0 6px;color:var(--dsw-alias-label-primary);font-size:16px;line-height:24px;font-weight:600}
+      .dsg-settingsIntro{margin:0 0 8px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
+      .dsg-settingsRow{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding:16px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
+      .dsg-settingsMain{display:flex;flex-direction:column;gap:4px;min-width:0}
+      .dsg-settingsLabelRow{display:flex;align-items:center;gap:8px;min-width:0}
+      .dsg-settingsPreviewStatus{width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;flex:none}
+      .dsg-settingsLabel{color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px}
+      .dsg-settingsHint{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;max-width:560px}
+      .dsg-switch{position:relative;width:36px;height:20px;flex:none;box-sizing:border-box;margin-top:1px;padding:0;border:none;border-radius:999px;background:var(--dsw-alias-border-l2);cursor:pointer;transition:background .15s ease}
+      .dsg-switch[aria-checked=true]{background:var(--dsw-alias-state-business-primary)}
+      .dsg-switch:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
+      .dsg-switchThumb{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 2px rgb(0 0 0 / .18);transition:transform .15s ease}
+      .dsg-switch[aria-checked=true] .dsg-switchThumb{transform:translateX(16px)}
+      .dsg-settingsPage .dsg-stateSpinner{color:var(--dsw-alias-label-tertiary)}
+      .dsg-priceModes{display:flex;gap:3px;width:fit-content;margin-top:9px;padding:2px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-2)}
+      .dsg-priceMode{height:23px;padding:0 9px;border:none;border-radius:4px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:10.5px;line-height:23px;cursor:pointer;white-space:nowrap}
+      .dsg-priceMode:hover{color:var(--dsw-alias-label-primary)}
+      .dsg-priceMode.active{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 1px 2px rgb(0 0 0 / .08)}
+      .dsg-priceMode:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+      .dsg-priceGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;width:100%;margin-top:10px}
+      .dsg-priceSave{align-self:flex-start;margin-top:9px;padding:5px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:5px;background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-secondary);font:inherit;font-size:10.5px;line-height:16px;cursor:pointer}
+      .dsg-priceSave:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .dsg-holidayField{display:flex;align-items:center;gap:8px;width:100%;margin-top:9px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
+      .dsg-holidayField .dsg-priceInput{flex:1;min-width:0}
+      .dsg-priceField{display:flex;flex-direction:column;gap:4px;min-width:0;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
+      .dsg-priceInput{width:100%;height:30px;box-sizing:border-box;padding:0 8px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;outline:none}
+      .dsg-priceInput:focus{border-color:var(--dsw-alias-state-business-primary)}
+      .dsg-deleteOverlay{position:fixed;inset:0;z-index:110;display:flex;align-items:center;justify-content:center;padding:24px;background:rgb(0 0 0 / .28)}
+      .dsg-deletePanel{width:min(430px,100%);box-sizing:border-box;padding:18px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 18px 50px rgb(0 0 0 / .28)}
+      .dsg-deleteTitle{font-size:15px;line-height:22px;font-weight:600}
+      .dsg-deleteTarget{margin-top:4px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;overflow-wrap:anywhere}
+      .dsg-deleteWarning{margin:12px 0 10px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
+      .dsg-deleteMuted{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:17px;margin-bottom:8px}
+      .dsg-deleteOperations{margin:10px 0 4px;padding:9px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:7px;background:var(--dsw-alias-bg-layer-2)}
+      .dsg-deleteOperationsTitle{color:var(--dsw-alias-label-primary);font-size:11px;line-height:16px;font-weight:600;margin-bottom:4px}
+      .dsg-deleteOperation{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:18px}
+      .dsg-deleteOption{display:flex;align-items:flex-start;gap:8px;padding:6px 0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;cursor:pointer}
+      .dsg-deleteOption input{margin:3px 0 0;accent-color:var(--dsw-alias-state-error-primary)}
+      .dsg-deleteError{margin-top:8px;color:var(--dsw-alias-state-error-primary);font-size:11px;line-height:17px;overflow-wrap:anywhere}
+      .dsg-deleteSafety{margin:9px 0 4px;padding:7px 9px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;font-size:11px;line-height:17px}
+      .dsg-deleteSafety.ok{color:var(--dsw-alias-state-success-primary);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 7%,transparent)}
+      .dsg-deleteSafety.fail{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 7%,transparent)}
+      .dsg-deleteSafetyTitle{font-weight:600}
+      .dsg-deleteSafetyList{margin-top:3px;color:var(--dsw-alias-label-secondary);font-size:10.5px;line-height:16px}
+      .dsg-deleteActions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+      .dsg-deleteButton{height:30px;padding:0 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;cursor:pointer}
+      .dsg-deleteButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+      .dsg-deleteButton.danger{border-color:transparent;background:var(--dsw-alias-state-error-primary);color:#fff}
+      .dsg-deleteButton.danger:hover:not(:disabled){filter:brightness(1.06);background:var(--dsw-alias-state-error-primary)}
+      .dsg-deleteButton:disabled{opacity:.45;cursor:default}
+      .dsg-deleteButton:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+      .dsg-dataOverlay{position:fixed;inset:0;z-index:100;pointer-events:auto;display:flex;align-items:center;justify-content:center;padding:24px;background:rgb(0 0 0 / .22)}
+      .dsg-dataPanel{display:flex;flex-direction:column;width:min(540px,100%);max-height:min(760px,calc(100vh - 48px));overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 18px 50px rgb(0 0 0 / .24)}
+      .dsg-statList{display:flex;flex-direction:column}
+      .dsg-statRow{border-bottom:1px solid var(--dsw-alias-border-l1)}
+      .dsg-statRow:first-child{border-top:1px solid var(--dsw-alias-border-l1)}
+      .dsg-statHeader{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;padding:10px 2px;border:none;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+      .dsg-statHeader:hover{background:var(--dsw-alias-interactive-bg-hover)}
+      .dsg-statHeader:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px;border-radius:5px}
+      .dsg-statIcon{width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-tertiary)}
+      .dsg-statIcon svg{width:14px;height:14px}
+      .dsg-statLabel{width:58px;flex:none;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:18px;white-space:nowrap}
+      .dsg-statAgg{flex:none;margin-left:-5px;padding:0 4px;border:1px solid var(--dsw-alias-border-l1);border-radius:3px;color:var(--dsw-alias-label-tertiary);font-size:9px;line-height:14px;white-space:nowrap}
+      .dsg-statValue{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:1;min-width:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .dsg-statChevron{width:12px;flex:none;color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:16px;text-align:center}
+      .dsg-statBody{padding:0 2px 10px 74px}
+      .dsg-statBar{display:flex;width:100%;height:5px;gap:1px;margin:2px 0 9px;border-radius:999px;background:var(--dsw-alias-interactive-bg-hover);overflow:hidden}
+      .dsg-statSegment{min-width:2px;height:100%;flex:none;border-radius:1px}
+      .dsg-segInput{background:var(--dsw-static-blue-450,#4d6bfe)}
+      .dsg-segCacheRead{background:var(--dsw-static-neutral-bluish-400,#94a3b8)}
+      .dsg-segCacheWrite{background:#a78bfa}
+      .dsg-segOutput{background:var(--dsw-alias-state-success-primary)}
+      .dsg-segSystem{background:var(--dsw-static-neutral-bluish-400,#94a3b8)}
+      .dsg-segTools{background:#a78bfa}
+      .dsg-segMessages{background:var(--dsw-static-blue-450,#4d6bfe)}
+      .dsg-segRemaining{background:var(--dsw-alias-border-l2)}
+      .dsg-segPeak{background:var(--dsw-alias-state-warn-primary)}
+      .dsg-segOffPeak{background:var(--dsw-alias-state-success-primary)}
+      .dsg-segModel0{background:#4d6bfe}
+      .dsg-segModel1{background:#a78bfa}
+      .dsg-segModel2{background:#2fa24c}
+      .dsg-segModel3{background:#e0a23f}
+      .dsg-segModel4{background:#e06c9f}
+      .dsg-statDetails{display:flex;flex-direction:column;margin:6px 0 0;padding:0}
+      .dsg-statDetail{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:4px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
+      .dsg-statDetail:last-child{border-bottom:none}
+      .dsg-statDetail dt{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
+      .dsg-statDetailLabel{display:inline-flex;align-items:center;gap:6px}
+      .dsg-statSwatch{display:inline-block;width:8px;height:8px;flex:none;border-radius:2px}
+      .dsg-statDetail dd{margin:0;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums;text-align:right}
+      .dsg-contextRing{flex:none;overflow:visible}
+      .dsg-contextRingTrack{fill:none;stroke:var(--dsw-alias-border-l3);stroke-width:2px}
+      .dsg-contextRingFill{fill:none;stroke:var(--dsw-alias-label-tertiary);stroke-width:2px;stroke-linecap:round}
+      @media(max-width:520px){.dsg-statLabel{width:46px}.dsg-statBody{padding-left:78px}.dsg-dataPanel{width:100%}}
+
+      .dsg-dataHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 18px 12px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+      .dsg-dataHeading{min-width:0}
+      .dsg-dataTitle{font-size:15px;line-height:22px;font-weight:600;overflow-wrap:anywhere}
+      .dsg-dataMeta{margin-top:3px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px;overflow-wrap:anywhere}
+      .dsg-dataHeaderActions{display:flex;align-items:center;gap:4px;flex:none}
+      .dsg-dataRefresh,.dsg-dataClose{width:26px;height:26px;padding:0;border:none;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:16px;line-height:26px;cursor:pointer}
+      .dsg-dataRefresh:hover,.dsg-dataClose:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .dsg-dataRefresh:disabled{opacity:.5;cursor:default}
+      .dsg-dataRefresh:focus-visible,.dsg-dataClose:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+      .dsg-dataBody{flex:0 1 auto;min-height:0;max-height:max(120px,min(610px,calc(100vh - 198px)));padding:14px 18px 6px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--dsw-alias-scrollbar-bg-l2) transparent}
+      .dsg-dataCards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+      .dsg-dataCard{padding:9px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-2);min-width:0}
+      .dsg-dataCardLabel{color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:15px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+      .dsg-dataCardValue{margin-top:3px;color:var(--dsw-alias-label-primary);font-size:16px;line-height:22px;font-weight:600;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+      .dsg-dataHint{margin:10px 0 0;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:17px}
+      .dsg-dataSection{margin-top:8px;border-top:1px solid var(--dsw-alias-border-l1)}
+      .dsg-dataSectionHeader{display:flex;align-items:center;gap:6px;width:100%;padding:9px 0 5px;border:none;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+      .dsg-dataSectionHeader:hover .dsg-dataSectionTitle{color:var(--dsw-alias-label-primary)}
+      .dsg-dataSectionHeader:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px;border-radius:4px}
+      .dsg-dataSectionChevron{width:12px;flex:none;color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:16px;text-align:center}
+      .dsg-dataSectionTitle{display:flex;align-items:baseline;gap:8px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-weight:600}
+      .dsg-dataSectionSub{color:var(--dsw-alias-label-tertiary);font-size:10.5px;font-weight:400}
+      .dsg-dataSectionBody{padding:0 0 9px 18px}
+      .dsg-dataCostHead,.dsg-dataCostRow{display:grid;grid-template-columns:1fr 62px 72px 64px;gap:8px;align-items:center;padding:3px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
+      .dsg-dataCostHead{color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:15px}
+      .dsg-dataCostLabel{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
+      .dsg-dataCostTokens,.dsg-dataCostPrice,.dsg-dataCostAmount{text-align:right;color:var(--dsw-alias-label-secondary);font-size:10.5px;line-height:16px;font-variant-numeric:tabular-nums}
+      .dsg-dataCostTotal{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:6px;color:var(--dsw-alias-label-primary);font-size:11px;line-height:16px;font-weight:600}
+      .dsg-dataCostPeriod{margin-top:8px;padding-top:6px;border-top:1px solid var(--dsw-alias-border-l1)}
+      .dsg-dataCostPeriodTitle{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--dsw-alias-label-primary);font-size:11px;line-height:16px;font-weight:600;margin-bottom:3px}
+      .dsg-dataToolModes{display:flex;align-items:center;gap:3px;margin:1px 0 5px;padding:2px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-2);width:fit-content}
+      .dsg-dataToolMode{height:22px;padding:0 8px;border:none;border-radius:4px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:10.5px;line-height:22px;cursor:pointer;white-space:nowrap}
+      .dsg-dataToolMode:hover{color:var(--dsw-alias-label-primary)}
+      .dsg-dataToolMode.active{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 1px 2px rgb(0 0 0 / .08)}
+      .dsg-dataToolMode:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+      .dsg-dataBreakdown{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin-top:7px}
+      .dsg-dataBreakdownRow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
+      .dsg-dataBreakdownLabel{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
+      .dsg-dataBreakdownValue{color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums}
+      .dsg-dataTools{max-height:224px;overflow:auto;margin-top:4px;overscroll-behavior:contain;scrollbar-width:thin}
+      .dsg-dataToolRow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
+      .dsg-dataToolName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px}
+      .dsg-dataToolMuted{color:var(--dsw-alias-label-tertiary)}
+      .dsg-dataToolStats{flex:none;color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:16px;font-variant-numeric:tabular-nums}
+      .dsg-dataFooter{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 18px;border-top:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:16px}
+      @media(max-width:520px){.dsg-dataCards,.dsg-dataBreakdown{grid-template-columns:1fr 1fr}.dsg-dataOverlay{padding:12px}.dsg-priceGrid{grid-template-columns:1fr 1fr}}
+    `;
+
+    /* ── shared small components ──────────────────────────────────── */
+
+    function MenuItem({ icon: menuIcon, label, danger, shortcut, checked, disabled, onClick }) {
+      return h(
+        'button',
+        {
+          type: 'button',
+          role: 'menuitem',
+          className: 'dsg-menuItem' + (danger ? ' danger' : '') + (disabled ? ' disabled' : ''),
+          title: label,
+          disabled: disabled === true,
+          onClick,
+        },
+        menuIcon ? h('span', { className: 'dsg-menuIcon' }, menuIcon) : null,
+        h('span', { className: 'dsg-menuLabel' }, label),
+        shortcut ? h('span', { className: 'dsg-menuShortcut' }, shortcut) : null,
+        checked
+          ? h('span', { className: 'dsg-menuCheck' }, h(IconCheck, { width: 14, height: 14 }))
+          : null,
+      );
+    }
+
+    function SubmenuItem({ icon: menuIcon, label, items, disabled }) {
+      const [open, setOpen] = React.useState(false);
+      const [position, setPosition] = React.useState(null);
+      const buttonRef = React.useRef(null);
+      const panelRef = React.useRef(null);
+
+      const place = () => {
+        const button = buttonRef.current;
+        if (!button) return;
+        const rect = button.getBoundingClientRect();
+        const width = 208;
+        const height = 300;
+        let left = rect.right + 4;
+        if (left + width > window.innerWidth - 8) left = Math.max(8, rect.left - width - 4);
+        const top = Math.max(8, Math.min(rect.top, window.innerHeight - height - 8));
+        setPosition({ left, top });
+      };
+
+      const toggle = () => {
+        if (disabled === true) return;
+        if (open) {
+          setOpen(false);
+          return;
+        }
+        place();
+        setOpen(true);
+      };
+
+      React.useEffect(() => {
+        if (!open) return undefined;
+        const onPointerDown = (event) => {
+          if (buttonRef.current?.contains(event.target)) return;
+          if (panelRef.current?.contains(event.target)) return;
+          setOpen(false);
+        };
+        const onKeyDown = (event) => {
+          if (event.key === 'Escape') setOpen(false);
+        };
+        document.addEventListener('pointerdown', onPointerDown, true);
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+          document.removeEventListener('pointerdown', onPointerDown, true);
+          document.removeEventListener('keydown', onKeyDown);
+        };
+      }, [open]);
+
+      return h(
+        React.Fragment,
+        null,
+        h(
+          'button',
+          {
+            ref: buttonRef,
+            type: 'button',
+            role: 'menuitem',
+            className: 'dsg-menuItem dsg-submenuTrigger' + (open ? ' open' : '') + (disabled ? ' disabled' : ''),
+            'aria-haspopup': 'menu',
+            'aria-expanded': open,
+            disabled: disabled === true,
+            onClick: (event) => {
+              event.stopPropagation();
+              toggle();
+            },
+          },
+          menuIcon ? h('span', { className: 'dsg-menuIcon' }, menuIcon) : null,
+          h('span', { className: 'dsg-menuLabel' }, label),
+          h('span', { className: 'dsg-submenuChevron', 'aria-hidden': 'true' }, '›'),
+        ),
+        open && position
+          ? h(
+              'div',
+              {
+                ref: panelRef,
+                className: 'dsg-submenu',
+                role: 'menu',
+                style: { left: `${position.left}px`, top: `${position.top}px` },
+                onMouseDown: (event) => event.stopPropagation(),
+              },
+              items.map((item) => h(MenuItem, {
+                key: item.key,
+                icon: item.icon,
+                label: item.label,
+                checked: item.checked,
+                danger: item.danger,
+                disabled: item.disabled,
+                onClick: () => {
+                  setOpen(false);
+                  item.onClick();
+                },
+              })),
+            )
+          : null,
+      );
+    }
+
+    function InlineMenu({ rect, onClose, children }) {
+      const ref = React.useRef(null);
+      React.useEffect(() => {
+        const close = (event) => {
+          if (ref.current && ref.current.contains(event.target)) return;
+          onClose();
+        };
+        const keyDown = (event) => {
+          if (event.key === 'Escape') onClose();
+        };
+        const closeOnScroll = (event) => {
+          const target = event.target;
+          if (target && typeof target.closest === 'function' && target.closest('.dsg-titleText')) return;
+          onClose();
+        };
+        document.addEventListener('pointerdown', close, true);
+        document.addEventListener('keydown', keyDown, true);
+        window.addEventListener('scroll', closeOnScroll, true);
+        window.addEventListener('resize', onClose);
+        return () => {
+          document.removeEventListener('pointerdown', close, true);
+          document.removeEventListener('keydown', keyDown, true);
+          window.removeEventListener('scroll', closeOnScroll, true);
+          window.removeEventListener('resize', onClose);
+        };
+      }, [onClose]);
+
+      const width = 252;
+      const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
+      const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+      const left = Math.max(8, Math.min(rect.left, viewportWidth - width - 8));
+      const estimated = 300;
+      let top = rect.bottom + 4;
+      if (top + estimated > viewportHeight) top = Math.max(8, rect.top - estimated - 4);
+      return h(
+        'div',
+        {
+          ref,
+          className: 'dsg-menu',
+          role: 'menu',
+          style: { left, top, width },
+          onPointerDown: (event) => event.stopPropagation(),
+        },
+        children,
+      );
+    }
+
+    function GroupNameEditor({ initialValue, onCommit, onCancel }) {
+      const [value, setValue] = React.useState(initialValue ?? '');
+      const inputRef = React.useRef(null);
+      const finishedRef = React.useRef(false);
+      React.useEffect(() => {
+        const input = inputRef.current;
+        if (!input) return;
+        input.focus();
+        input.select();
+      }, []);
+      const commit = () => {
+        if (finishedRef.current) return;
+        finishedRef.current = true;
+        const next = value.trim();
+        if (next) onCommit(next.slice(0, 60));
+        else onCancel();
+      };
+      const cancel = () => {
+        if (finishedRef.current) return;
+        finishedRef.current = true;
+        onCancel();
+      };
+      return h('input', {
+        ref: inputRef,
+        className: 'dsg-editInput',
+        value,
+        maxLength: 60,
+        'aria-label': NS,
+        onClick: (event) => event.stopPropagation(),
+        onPointerDown: (event) => event.stopPropagation(),
+        onChange: (event) => setValue(event.target.value),
+        onKeyDown: (event) => {
+          event.stopPropagation();
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            commit();
+          } else if (event.key === 'Escape') {
+            event.preventDefault();
+            cancel();
+          }
+        },
+        onBlur: commit,
+      });
+    }
+
+    /* ── session status dots (same data + visual as the official browser) ── */
+
+    function statusValue(statuses, sessionId) {
+      if (!statuses) return undefined;
+      if (typeof statuses.get === 'function') return statuses.get(sessionId);
+      return statuses[sessionId];
+    }
+
+    function visiblePendingKind(kind) {
+      if (kind === 'approval' || kind === 'plan-review' || kind === 'question') return kind;
+      return undefined;
+    }
+
+    function subagentRunningFor(list, childId, statuses) {
+      const status = statusValue(statuses, childId);
+      if (status?.running === true) return true;
+      if (list.byId?.[childId]?.running === true) return true;
+      const timing = list.projectionsBySession?.[childId]?.values?.subagentTiming;
+      return timing?.active !== undefined;
+    }
+
+    function runningChildCountFor(list, parentId, statuses) {
+      const catalog = list.projectionsBySession?.[parentId]?.values?.subagentCatalog;
+      if (!Array.isArray(catalog)) return 0;
+      let count = 0;
+      for (const child of catalog) {
+        if (subagentRunningFor(list, child.id, statuses)) count += 1;
+      }
+      return count;
+    }
+
+    function buildSessionStatuses(node, tr) {
+      const subagents = node.runningSubagentCount > 0
+        ? {
+            state: 'ongoing',
+            label: tr(
+              node.runningSubagentCount === 1 ? 'status.subagentsRunning.one' : 'status.subagentsRunning.other',
+              { n: node.runningSubagentCount },
+            ),
+            trailingLabel: tr('status.compact.subagents'),
+          }
+        : undefined;
+      let pending;
+      if (node.pendingInteraction === 'approval') {
+        pending = {
+          state: 'warning',
+          label: tr('status.waitingApproval'),
+          trailingLabel: tr('status.compact.approval'),
+        };
+      } else if (node.pendingInteraction === 'plan-review') {
+        pending = {
+          state: 'warning',
+          label: tr('status.planReview'),
+          trailingLabel: tr('status.compact.planReview'),
+        };
+      } else if (node.pendingInteraction === 'question') {
+        pending = {
+          state: 'warning',
+          label: tr('status.waitingAnswer'),
+          trailingLabel: tr('status.compact.answer'),
+        };
+      }
+      if (pending !== undefined) return subagents === undefined ? [pending] : [pending, subagents];
+      if (node.running) {
+        const primary = { state: 'ongoing', label: tr('status.running') };
+        return subagents === undefined ? [primary] : [primary, subagents];
+      }
+      if (subagents !== undefined) return [subagents];
+      if (node.completed) return [{ state: 'done', label: tr('status.completed') }];
+      return [{ state: 'idle', label: tr('status.idle') }];
+    }
+
+    function StateDot({ state, size }) {
+      const runningLight = state === 'ongoing' && runningLightPreference;
+      const dimension = size ?? (state === 'ongoing' && !runningLight ? 14 : 10);
+      if (state === 'ongoing' && !runningLight) {
+        return h(
+          'svg',
+          {
+            className: 'dsg-stateSpinner',
+            width: dimension,
+            height: dimension,
+            viewBox: '0 0 24 24',
+            'aria-hidden': 'true',
+          },
+          h(
+            'g',
+            { className: 'dsg-stateSpinnerMotion' },
+            h('circle', { className: 'dsg-stateSpinnerTrack', cx: '12', cy: '12', r: '9.5' }),
+            h('circle', { className: 'dsg-stateSpinnerArc', cx: '12', cy: '12', r: '9.5' }),
+          ),
+        );
+      }
+      return h('span', {
+        className: 'dsg-stateDot',
+        'data-state': runningLight ? 'running-light' : state,
+        style: { width: dimension, height: dimension },
+        'aria-hidden': 'true',
+      });
+    }
+
+    function formatExactNumber(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '—';
+      return Math.round(n).toLocaleString('en-US');
+    }
+
+    function formatDurationMs(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n <= 0) return '—';
+      const seconds = n / 1000;
+      if (seconds < 60) return `${(Math.round(seconds * 10) / 10).toFixed(1)}s`;
+      const whole = Math.round(seconds);
+      return `${Math.floor(whole / 60)}m ${whole % 60}s`;
+    }
+
+    function formatPercent(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) return '—';
+      const percent = n * 100;
+      return `${percent >= 10 ? Math.round(percent) : Math.round(percent * 10) / 10}%`;
+    }
+
+    function formatBytes(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) return '—';
+      if (n < 1024) return `${Math.round(n)} B`;
+      const units = ['KB', 'MB', 'GB', 'TB'];
+      let size = n / 1024;
+      let unit = 0;
+      while (size >= 1024 && unit < units.length - 1) {
+        size /= 1024;
+        unit += 1;
+      }
+      return `${size >= 10 ? size.toFixed(1) : size.toFixed(2)} ${units[unit]}`;
+    }
+
+    function formatTps(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n <= 0) return '—';
+      return `${n >= 100 ? n.toFixed(0) : n.toFixed(1)} tok/s`;
+    }
+
+    function StatBar({ parts }) {
+      const visible = parts.filter((part) => Number(part.value) > 0);
+      const total = visible.reduce((sum, part) => sum + Number(part.value), 0);
+      if (total <= 0) return null;
+      return h(
+        'div',
+        { className: 'dsg-statBar', 'aria-hidden': 'true' },
+        visible.map((part) => h('span', {
+          key: part.key,
+          className: `dsg-statSegment ${part.className}`,
+          style: { width: `${Number(part.value) / total * 100}%` },
+        })),
+      );
+    }
+
+    function StatRow({ label, value, aggregation, icon: rowIcon, open, onToggle, children }) {
+      return h(
+        'div',
+        { className: 'dsg-statRow' },
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'dsg-statHeader',
+            'aria-expanded': open,
+            onClick: onToggle,
+          },
+          h('span', { className: 'dsg-statIcon', 'aria-hidden': 'true' }, rowIcon ? h(rowIcon, { width: 14, height: 14 }) : null),
+          h('span', { className: 'dsg-statLabel' }, label),
+          aggregation ? h('span', { className: 'dsg-statAgg' }, aggregation) : null,
+          h('span', { className: 'dsg-statValue' }, value),
+          h('span', { className: 'dsg-statChevron', 'aria-hidden': 'true' }, open ? '▾' : '▸'),
+        ),
+        open ? h('div', { className: 'dsg-statBody' }, children) : null,
+      );
+    }
+
+    function ContextRing({ rate }) {
+      const radius = 5.5;
+      const circumference = 2 * Math.PI * radius;
+      return h(
+        'svg',
+        { viewBox: '0 0 14 14', width: 14, height: 14, className: 'dsg-contextRing', 'aria-hidden': 'true' },
+        h('circle', { className: 'dsg-contextRingTrack', cx: 7, cy: 7, r: radius }),
+        h('circle', {
+          className: 'dsg-contextRingFill',
+          cx: 7,
+          cy: 7,
+          r: radius,
+          strokeDasharray: `${circumference * Math.max(0, Math.min(1, rate))} ${circumference}`,
+          transform: 'rotate(-90 7 7)',
+        }),
+      );
+    }
+
+    function DataPanel(props) {
+      const {
+        kind,
+        title,
+        sessionIds,
+        pricing,
+        useSessions,
+        tr,
+        onClose,
+      } = props;
+      const list = typeof useSessions === 'function'
+        ? useSessions((state) => state)
+        : { ids: [], byId: {}, projectionsBySession: {} };
+      const [live, setLive] = React.useState({});
+      const [hostStatus, setHostStatus] = React.useState('loading');
+      const [loading, setLoading] = React.useState(true);
+      const [revision, setRevision] = React.useState(0);
+      const [expanded, setExpanded] = React.useState({
+        activity: false,
+        usage: false,
+        context: false,
+        cost: false,
+        models: false,
+        storage: false,
+        tools: false,
+      });
+      const [toolsMode, setToolsMode] = React.useState('available');
+      const overlayRef = React.useRef(null);
+      React.useEffect(() => {
+        const overlay = overlayRef.current;
+        if (!overlay) return undefined;
+        const onWheel = (event) => {
+          const target = event.target;
+          if (target && typeof target.closest === 'function' && target.closest('.dsg-dataBody')) {
+            event.stopPropagation();
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+        };
+        overlay.addEventListener('wheel', onWheel, { passive: false });
+        return () => overlay.removeEventListener('wheel', onWheel);
+      }, []);
+      const idsKey = sessionIds.join('|');
+      const holidayKey = (pricing?.holidays ?? []).join(',');
+
+      React.useEffect(() => {
+        let active = true;
+        setLoading(true);
+        setHostStatus('loading');
+        fetchLiveSessionData(sessionIds, revision > 0, pricing?.holidays ?? []).then(({ rows, bridge, failed }) => {
+          if (!active) return;
+          setLive(Object.fromEntries(rows));
+          setHostStatus(!bridge ? 'unavailable' : failed ? 'partial' : 'ok');
+        }).catch(() => {
+          if (active) setHostStatus('error');
+        }).finally(() => {
+          if (active) setLoading(false);
+        });
+        return () => {
+          active = false;
+        };
+      }, [idsKey, holidayKey, revision]);
+
+      React.useEffect(() => {
+        const onKeyDown = (event) => {
+          if (event.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+      }, [onClose]);
+
+      const rows = React.useMemo(() => sessionIds.map((sessionId) => {
+        const host = live[sessionId];
+        const rawUsage = projectionOf(list, sessionId, 'tokenUsage');
+        const hostUsage = host?.tokenUsage;
+        const rawPressure = projectionOf(list, sessionId, 'contextPressure');
+        const rawStats = projectionOf(list, sessionId, 'sessionStats');
+        const rawBreakdown = projectionOf(list, sessionId, 'contextBreakdown');
+        const usage = usageSummary(rawUsage ?? hostUsage);
+        const pressure = rawPressure ?? host?.contextPressure;
+        const stats = rawStats ?? host?.stats;
+        const breakdown = rawBreakdown ?? host?.contextBreakdown;
+        const hasUsage = rawUsage !== undefined && rawUsage !== null || hostUsage !== undefined && hostUsage !== null;
+        const hasPressure = rawPressure !== undefined && rawPressure !== null || host?.contextPressure !== undefined;
+        const hasStats = rawStats !== undefined && rawStats !== null || host?.stats !== undefined;
+        const hasBreakdown = rawBreakdown !== undefined && rawBreakdown !== null || host?.contextBreakdown !== undefined;
+        const loggedSelection = projectionOf(list, sessionId, 'modelSelection');
+        const selectedModel = host?.model ?? loggedSelection?.next?.model ?? loggedSelection?.lastUsed?.model;
+        const selectedProvider = host?.provider ?? loggedSelection?.next?.provider ?? loggedSelection?.lastUsed?.provider;
+        const hasModelTime = Array.isArray(host?.modelUsage)
+          && host.modelUsage.some((entry) => Number(entry?.durationMs) > 0);
+        const modelUsage = Array.isArray(host?.modelUsage) && host.modelUsage.length > 0
+          ? host.modelUsage
+          : selectedModel
+            ? [{ provider: selectedProvider ?? '', model: selectedModel, durationMs: 0 }]
+            : [];
+        const fallbackPeriod = deepSeekPeakAt(Date.now(), pricing?.holidays) ? 'peak' : 'offPeak';
+        const noUsage = usageSummary({});
+        const periods = host?.usageByPeriod
+          ? {
+              peak: periodUsage(host.usageByPeriod.peak),
+              offPeak: periodUsage(host.usageByPeriod.offPeak),
+            }
+          : fallbackPeriod === 'peak'
+            ? { peak: usage, offPeak: noUsage }
+            : { peak: noUsage, offPeak: usage };
+        const periodTotal = periods.peak.total + periods.offPeak.total;
+        const hasPeriodCoverage = usage.total === 0 || periodTotal > 0;
+        return {
+          id: sessionId,
+          usage,
+          pressure,
+          context: contextRateOf(pressure),
+          stats,
+          breakdown,
+          periods,
+          hasUsage,
+          hasPressure,
+          hasStats,
+          hasBreakdown,
+          hasModelTime,
+          estimatedPeriod: !host?.usageByPeriod && hasUsage,
+          hasPeriodCoverage,
+          model: selectedModel,
+          provider: selectedProvider,
+          modelUsage,
+          toolSource: host?.toolSource,
+          tools: host?.tools ?? [],
+          hasFileSize: Number.isFinite(Number(host?.fileBytes)),
+          fileBytes: Number.isFinite(Number(host?.fileBytes)) ? Number(host.fileBytes) : 0,
+          eventCount: Number.isFinite(Number(host?.eventCount)) ? Number(host.eventCount) : 0,
+          hasEventCount: Number.isFinite(Number(host?.eventCount)),
+          cost: hasUsage && hasPeriodCoverage ? costOfPeriods(periods, pricing) : null,
+        };
+      }), [list, live, idsKey, holidayKey, pricing]);
+
+      const totals = rows.reduce((acc, row) => ({
+        input: acc.input + row.usage.input,
+        cacheRead: acc.cacheRead + row.usage.cacheRead,
+        cacheWrite: acc.cacheWrite + row.usage.cacheWrite,
+        output: acc.output + row.usage.output,
+        reasoning: acc.reasoning + row.usage.reasoning,
+        total: acc.total + row.usage.total,
+      }), { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0, total: 0 });
+      const cacheBase = totals.input + totals.cacheRead + totals.cacheWrite;
+      const cacheRate = cacheBase > 0 ? totals.cacheRead / cacheBase : 0;
+      const costs = rows.map((row) => row.cost);
+      const knownCosts = costs.filter((value) => value !== null);
+      const costPartial = knownCosts.length > 0 && knownCosts.length < costs.length;
+      const totalCost = knownCosts.length > 0
+        ? knownCosts.reduce((sum, value) => sum + value, 0)
+        : null;
+      const hostUnavailable = hostStatus === 'unavailable';
+      const activeRows = rows.filter((row) => {
+        const host = live[row.id];
+        return Boolean(host) && host.live === true && !host.error;
+      });
+      const errorRows = rows.filter((row) => {
+        const host = live[row.id];
+        return Boolean(host?.error) || (hostStatus === 'error' && !host);
+      });
+      const nonActiveRows = hostUnavailable || hostStatus === 'loading'
+        ? []
+        : rows.filter((row) => {
+            const host = live[row.id];
+            return !host || (host.live === false && !host.error);
+          });
+      const toolRows = activeRows;
+      const toolSnapshot = toolRows.some((row) => row.toolSource === 'snapshot');
+      const toolMap = new Map();
+      for (const row of toolRows) mergeTools(toolMap, row.tools);
+      const tools = [...toolMap.values()].sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name));
+      const availableTools = tools.filter((tool) => tool.available).length;
+      const closedTools = tools.length - availableTools;
+      const visibleTools = tools.filter((tool) => (toolsMode === 'available' ? tool.available : !tool.available));
+      const totalCalls = tools.reduce((sum, tool) => sum + tool.calls, 0);
+      const isSession = kind === 'session';
+      const showToolSection = isSession && (hostStatus === 'loading' || toolRows.length > 0);
+      const toolHideNotice = !showToolSection
+        ? hostUnavailable ? tr('data.toolHostUnavailable')
+          : errorRows.length > 0 ? tr('data.toolReadError')
+            : nonActiveRows.length > 0 ? tr('data.toolNonActive')
+              : null
+        : null;
+      const toolExtraNotes = showToolSection
+        ? [
+            nonActiveRows.length > 0
+              ? h('div', { className: 'dsg-dataHint' }, tr('data.toolSkippedNonActive', { count: nonActiveRows.length }))
+              : null,
+            errorRows.length > 0
+              ? h('div', { className: 'dsg-dataHint' }, tr('data.toolPartialError', { count: errorRows.length }))
+              : null,
+          ].filter(Boolean)
+        : [];
+      const stats = rows.reduce((acc, row) => {
+        const value = row.stats ?? {};
+        return {
+          turns: acc.turns + (Number(value.turns) || 0),
+          steps: acc.steps + (Number(value.steps) || 0),
+          llmMs: acc.llmMs + (Number(value.llmMs) || 0),
+          toolMs: acc.toolMs + (Number(value.toolMs) || 0),
+          ttftMs: acc.ttftMs + (Number(value.ttftMs) || 0),
+          ttftSteps: acc.ttftSteps + (Number(value.ttftSteps) || 0),
+          decodeMs: acc.decodeMs + (Number(value.decodeMs) || 0),
+          decodeTokens: acc.decodeTokens + (Number(value.decodeTokens) || 0),
+        };
+      }, { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 });
+      const anyStats = rows.some((row) => row.hasStats);
+      const hasStats = rows.some((row) => row.stats && (row.stats.turns || row.stats.steps || row.stats.llmMs));
+      const anyUsage = rows.some((row) => row.hasUsage);
+      const periodPartial = rows.some((row) => row.hasUsage && row.hasPeriodCoverage === false);
+      const usagePartial = anyUsage && !rows.every((row) => row.hasUsage);
+      const anyBreakdown = rows.some((row) => row.hasBreakdown);
+      const breakdownPartial = anyBreakdown && !rows.every((row) => row.hasBreakdown);
+      const statsPartial = anyStats && !rows.every((row) => row.hasStats);
+      const anyModelTime = rows.some((row) => row.hasModelTime);
+      const modelTimePartial = anyModelTime && !rows.every((row) => row.hasModelTime);
+      const speed = isSession && stats.decodeMs > 0 ? formatTps(stats.decodeTokens / (stats.decodeMs / 1000)) : null;
+      const breakdownRows = rows.filter((row) => row.hasBreakdown);
+      const breakdownCount = breakdownRows.length;
+      const breakdownSum = breakdownRows.reduce((acc, row) => ({
+        systemTokens: acc.systemTokens + (Number(row.breakdown?.systemTokens) || 0),
+        toolsTokens: acc.toolsTokens + (Number(row.breakdown?.toolsTokens) || 0),
+        messageTokens: acc.messageTokens + (Number(row.breakdown?.messageTokens) || 0),
+      }), { systemTokens: 0, toolsTokens: 0, messageTokens: 0 });
+      const breakdown = isSession
+        ? breakdownSum
+        : {
+            systemTokens: breakdownCount > 0 ? breakdownSum.systemTokens / breakdownCount : 0,
+            toolsTokens: breakdownCount > 0 ? breakdownSum.toolsTokens / breakdownCount : 0,
+            messageTokens: breakdownCount > 0 ? breakdownSum.messageTokens / breakdownCount : 0,
+          };
+      const breakdownTotal = breakdown.systemTokens + breakdown.toolsTokens + breakdown.messageTokens;
+      const sessionContext = isSession ? rows[0]?.context ?? null : null;
+      const percent = sessionContext === null ? null : Math.min(100, Math.round(sessionContext.rate * 100));
+      const remainingContext = sessionContext === null ? 0 : Math.max(0, sessionContext.window - breakdownTotal);
+      const totalPeriods = rows.reduce((acc, row) => ({
+        peak: {
+          input: acc.peak.input + row.periods.peak.input,
+          cacheRead: acc.peak.cacheRead + row.periods.peak.cacheRead,
+          cacheWrite: acc.peak.cacheWrite + row.periods.peak.cacheWrite,
+          output: acc.peak.output + row.periods.peak.output,
+          total: acc.peak.total + row.periods.peak.total,
+        },
+        offPeak: {
+          input: acc.offPeak.input + row.periods.offPeak.input,
+          cacheRead: acc.offPeak.cacheRead + row.periods.offPeak.cacheRead,
+          cacheWrite: acc.offPeak.cacheWrite + row.periods.offPeak.cacheWrite,
+          output: acc.offPeak.output + row.periods.offPeak.output,
+          total: acc.offPeak.total + row.periods.offPeak.total,
+        },
+      }), {
+        peak: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, total: 0 },
+        offPeak: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, total: 0 },
+      });
+      const costPeriods = [
+        { key: 'peak', label: tr('data.peak'), usage: totalPeriods.peak, rates: pricing?.peak },
+        { key: 'offPeak', label: tr('data.offPeak'), usage: totalPeriods.offPeak, rates: pricing?.offPeak },
+      ].map((period) => ({
+        ...period,
+        cost: costOfUsage(period.usage, period.rates),
+      })).filter((period) => period.usage.total > 0);
+      const periodParts = [
+        { key: 'input', label: tr('data.input'), field: 'input' },
+        { key: 'cacheRead', label: tr('data.cacheRead'), field: 'cacheRead' },
+        { key: 'cacheWrite', label: tr('data.cacheWrite'), field: 'cacheWrite' },
+        { key: 'output', label: tr('data.output'), field: 'output' },
+      ];
+      const estimatedPeriod = rows.some((row) => row.estimatedPeriod);
+      const modelMap = new Map();
+      for (const row of rows) {
+        for (const entry of row.modelUsage) {
+          if (!entry || typeof entry.provider !== 'string' || typeof entry.model !== 'string') continue;
+          const key = `${entry.provider}\u0000${entry.model}`;
+          const current = modelMap.get(key) ?? {
+            provider: entry.provider,
+            model: entry.model,
+            durationMs: 0,
+          };
+          current.durationMs += Math.max(0, Number(entry.durationMs) || 0);
+          modelMap.set(key, current);
+        }
+      }
+      const modelRows = [...modelMap.values()]
+        .sort((a, b) => b.durationMs - a.durationMs || a.model.localeCompare(b.model));
+      const modelTotalMs = modelRows.reduce((sum, entry) => sum + entry.durationMs, 0);
+      for (const entry of modelRows) {
+        entry.share = modelTotalMs > 0
+          ? entry.durationMs / modelTotalMs
+          : 1 / modelRows.length;
+      }
+      const modelValue = modelRows.length === 0
+        ? '—'
+        : !anyModelTime
+          ? modelRows.length === 1
+            ? `${modelRows[0].model} · ${tr('data.noTimeShort')}`
+            : `${modelRows.length} ${tr('data.models')} · ${tr('data.noTimeShort')}`
+          : modelRows.length === 1
+            ? `${modelRows[0].model} · 100%`
+            : `${modelRows.length} ${tr('data.models')} · ${formatDurationMs(modelTotalMs)}`;
+
+      const fileSizeRows = rows.filter((row) => row.hasFileSize);
+      const anyFileSize = fileSizeRows.length > 0;
+      const fileSizePartial = anyFileSize && fileSizeRows.length < rows.length;
+      const totalFileBytes = fileSizeRows.reduce((sum, row) => sum + row.fileBytes, 0);
+      const eventCountRows = rows.filter((row) => row.hasEventCount);
+      const anyEventCount = eventCountRows.length > 0;
+      const totalEventCount = eventCountRows.reduce((sum, row) => sum + row.eventCount, 0);
+      const eventCountPartial = anyEventCount && eventCountRows.length < rows.length;
+      const fileValue = anyFileSize ? formatBytes(totalFileBytes) : '—';
+
+      const dataIncomplete = !anyUsage
+        || periodPartial
+        || costPartial
+        || !anyFileSize
+        || usagePartial
+        || !anyStats
+        || statsPartial
+        || !anyBreakdown
+        || breakdownPartial
+        || (modelRows.length > 0 && !anyModelTime)
+        || modelTimePartial
+        || estimatedPeriod
+        || totalCost === null
+        || !pricingConfigured(pricing);
+
+      const modelCounts = new Map();
+      for (const row of rows) {
+        if (row.model) modelCounts.set(row.model, (modelCounts.get(row.model) ?? 0) + 1);
+      }
+      const models = [...modelCounts.entries()].map(([model, count]) => `${model} × ${count}`);
+      const running = sessionIds.filter((id) => list.byId?.[id]?.running === true).length;
+      const modelText = isSession
+        ? (rows[0]?.provider ? `${rows[0].provider} / ${rows[0]?.model ?? '—'}` : rows[0]?.model ?? '—')
+        : models.join(', ') || '—';
+      const metaText = isSession
+        ? `${modelText}${hasStats ? ` · ${tr('data.turns')} ${stats.turns}` : ''}`
+        : `${rows.length} ${tr('data.sessions')} · ${running} ${tr('status.running')}`;
+      const swatched = (label, className) => h(
+        'span',
+        { className: 'dsg-statDetailLabel' },
+        h('span', { className: `dsg-statSwatch ${className}`, 'aria-hidden': 'true' }),
+        label,
+      );
+      const detailList = (entries) => h(
+        'dl',
+        { className: 'dsg-statDetails' },
+        entries.map(([label, value]) => h(
+          'div',
+          { key: label, className: 'dsg-statDetail' },
+          h('dt', {}, label),
+          h('dd', {}, value),
+        )),
+      );
+      const toggle = (key) => setExpanded((previous) => ({ ...previous, [key]: !previous[key] }));
+      const activityValue = !anyStats
+        ? '—'
+        : hasStats
+          ? `${stats.turns} ${tr('data.turns')} · ${stats.steps} ${tr('data.steps')}${speed ? ` · ${speed}` : ''}`
+          : '—';
+      const usageValue = anyUsage
+        ? `${formatCompactNumber(totals.total)}${cacheBase > 0 ? ` · ${(cacheRate * 100).toFixed(1)}%` : ''}`
+        : '—';
+      const contextValue = sessionContext !== null
+        ? h(
+            React.Fragment,
+            null,
+            h(ContextRing, { rate: sessionContext.rate }),
+            ` ~${percent}% · ~${formatCompactNumber(sessionContext.used)} / ${formatCompactNumber(sessionContext.window)}`,
+          )
+        : breakdownTotal > 0 ? `~${formatCompactNumber(breakdownTotal)}` : '—';
+      const toolsValue = `${availableTools} ${tr('data.toolsAvailable')} · ${closedTools} ${tr('data.toolsClosed')} · ${totalCalls} ${tr('data.toolCalls')}`;
+
+      return h(
+        'div',
+        {
+          className: 'dsg-dataOverlay',
+          ref: overlayRef,
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget) onClose();
+          },
+        },
+        h(
+          'section',
+          {
+            className: 'dsg-dataPanel',
+            role: 'dialog',
+            'aria-modal': 'true',
+            'aria-label': title,
+          },
+          h(
+            'header',
+            { className: 'dsg-dataHeader' },
+            h(
+              'div',
+              { className: 'dsg-dataHeading' },
+              h('div', { className: 'dsg-dataTitle' }, title),
+              h('div', { className: 'dsg-dataMeta' }, metaText),
+            ),
+            h(
+              'div',
+              { className: 'dsg-dataHeaderActions' },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsg-dataRefresh',
+                  title: tr('data.refresh'),
+                  'aria-label': tr('data.refresh'),
+                  disabled: loading,
+                  onClick: () => setRevision((value) => value + 1),
+                },
+                loading ? '…' : '↻',
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsg-dataClose',
+                  title: tr('data.close'),
+                  'aria-label': tr('data.close'),
+                  onClick: onClose,
+                },
+                '×',
+              ),
+            ),
+          ),
+          h(
+            'div',
+            {
+              className: 'dsg-dataBody',
+            },
+            !isSession
+              ? h('div', { className: 'dsg-dataHint' }, tr('data.aggregationHint'))
+              : null,
+            dataIncomplete
+              ? h('div', { className: 'dsg-dataHint' }, tr('data.incompleteHint'))
+              : null,
+            h(
+              'div',
+              { className: 'dsg-statList' },
+              h(
+                StatRow,
+                {
+                  label: tr('data.activity'),
+                  aggregation: isSession ? undefined : tr('data.aggSum'),
+                  icon: IconGauge,
+                  value: activityValue,
+                  open: expanded.activity,
+                  onToggle: () => toggle('activity'),
+                },
+                detailList(isSession
+                  ? [
+                      [tr('data.turns'), hasStats ? formatExactNumber(stats.turns) : '—'],
+                      [tr('data.steps'), hasStats ? formatExactNumber(stats.steps) : '—'],
+                      [tr('data.llmTime'), formatDurationMs(stats.llmMs)],
+                      [tr('data.toolTime'), formatDurationMs(stats.toolMs)],
+                      [tr('data.ttft'), stats.ttftSteps > 0 ? formatDurationMs(stats.ttftMs / stats.ttftSteps) : '—'],
+                      [tr('data.speed'), speed ?? '—'],
+                    ]
+                  : [
+                      [tr('data.turns'), hasStats ? formatExactNumber(stats.turns) : '—'],
+                      [tr('data.steps'), hasStats ? formatExactNumber(stats.steps) : '—'],
+                      [tr('data.llmTime'), formatDurationMs(stats.llmMs)],
+                      [tr('data.toolTime'), formatDurationMs(stats.toolMs)],
+                    ]),
+                !anyStats
+                  ? h('div', { className: 'dsg-dataHint' }, tr('data.noStatsData'))
+                  : statsPartial
+                    ? h('div', { className: 'dsg-dataHint' }, tr('data.partialStats'))
+                    : null,
+              ),
+              h(
+                StatRow,
+                {
+                  label: tr('data.usage'),
+                  aggregation: isSession ? undefined : tr('data.aggSum'),
+                  icon: IconDatabase,
+                  value: usageValue,
+                  open: expanded.usage,
+                  onToggle: () => toggle('usage'),
+                },
+                h(StatBar, {
+                  parts: [
+                    { key: 'input', value: totals.input, className: 'dsg-segInput' },
+                    { key: 'cacheRead', value: totals.cacheRead, className: 'dsg-segCacheRead' },
+                    { key: 'cacheWrite', value: totals.cacheWrite, className: 'dsg-segCacheWrite' },
+                    { key: 'output', value: totals.output, className: 'dsg-segOutput' },
+                  ],
+                }),
+                detailList([
+                  [tr('data.cacheHit'), anyUsage && cacheBase > 0 ? `${(cacheRate * 100).toFixed(1)}%` : '—'],
+                  [swatched(tr('data.input'), 'dsg-segInput'), anyUsage ? formatExactNumber(totals.input) : '—'],
+                  [swatched(tr('data.cacheRead'), 'dsg-segCacheRead'), anyUsage ? formatExactNumber(totals.cacheRead) : '—'],
+                  [swatched(tr('data.cacheWrite'), 'dsg-segCacheWrite'), anyUsage ? formatExactNumber(totals.cacheWrite) : '—'],
+                  [swatched(tr('data.output'), 'dsg-segOutput'), anyUsage ? formatExactNumber(totals.output) : '—'],
+                  ...(anyUsage && totals.reasoning > 0 ? [[tr('data.reasoning'), formatExactNumber(totals.reasoning)]] : []),
+                ]),
+                !anyUsage
+                  ? h('div', { className: 'dsg-dataHint' }, tr('data.noUsageData'))
+                  : usagePartial
+                    ? h('div', { className: 'dsg-dataHint' }, tr('data.partialUsage'))
+                    : null,
+              ),
+              h(
+                StatRow,
+                {
+                  label: tr('data.context'),
+                  aggregation: isSession ? undefined : tr('data.aggAverage'),
+                  icon: IconContext,
+                  value: contextValue,
+                  open: expanded.context,
+                  onToggle: () => toggle('context'),
+                },
+                breakdownTotal > 0
+                  ? isSession
+                    ? h(
+                        React.Fragment,
+                        null,
+                        h(StatBar, {
+                          parts: [
+                            { key: 'system', value: breakdown.systemTokens, className: 'dsg-segSystem' },
+                            { key: 'tools', value: breakdown.toolsTokens, className: 'dsg-segTools' },
+                            { key: 'messages', value: breakdown.messageTokens, className: 'dsg-segMessages' },
+                            { key: 'remaining', value: remainingContext, className: 'dsg-segRemaining' },
+                          ],
+                        }),
+                        detailList([
+                          [swatched(tr('data.system'), 'dsg-segSystem'), `~${formatCompactNumber(breakdown.systemTokens)}`],
+                          [swatched(tr('data.tools'), 'dsg-segTools'), `~${formatCompactNumber(breakdown.toolsTokens)}`],
+                          [swatched(tr('data.messages'), 'dsg-segMessages'), `~${formatCompactNumber(breakdown.messageTokens)}`],
+                          [swatched(tr('data.remaining'), 'dsg-segRemaining'), `~${formatCompactNumber(remainingContext)}`],
+                        ]),
+                      )
+                    : detailList([
+                        [swatched(tr('data.system'), 'dsg-segSystem'), `~${formatCompactNumber(breakdown.systemTokens)}`],
+                        [swatched(tr('data.tools'), 'dsg-segTools'), `~${formatCompactNumber(breakdown.toolsTokens)}`],
+                        [swatched(tr('data.messages'), 'dsg-segMessages'), `~${formatCompactNumber(breakdown.messageTokens)}`],
+                      ])
+                  : h('div', { className: 'dsg-dataHint' }, tr('data.noBreakdown')),
+                breakdownPartial
+                  ? h('div', { className: 'dsg-dataHint' }, tr('data.partialBreakdown'))
+                  : null,
+              ),
+              modelRows.length > 0 ? h(
+                StatRow,
+                {
+                  label: tr('data.models'),
+                  aggregation: isSession ? undefined : tr('data.aggSum'),
+                  icon: IconModel,
+                  value: modelValue,
+                  open: expanded.models,
+                  onToggle: () => toggle('models'),
+                },
+                anyModelTime
+                  ? h(StatBar, {
+                      parts: modelRows.map((entry, index) => ({
+                        key: `${entry.provider}/${entry.model}`,
+                        value: entry.durationMs,
+                        className: `dsg-segModel${index % 5}`,
+                      })),
+                    })
+                  : null,
+                h('div', { className: 'dsg-dataHint' }, tr('data.modelTimeHint')),
+                detailList(modelRows.map((entry, index) => [
+                  swatched(`${entry.model}`, `dsg-segModel${index % 5}`),
+                  anyModelTime
+                    ? `${formatPercent(entry.share)} · ${formatDurationMs(entry.durationMs)}`
+                    : '—',
+                ])),
+                !anyModelTime
+                  ? h('div', { className: 'dsg-dataHint' }, tr('data.modelTimeUnavailable'))
+                  : modelTimePartial
+                    ? h('div', { className: 'dsg-dataHint' }, tr('data.modelTimePartial'))
+                    : null,
+              ) : null,
+              h(
+                StatRow,
+                {
+                  label: tr('data.fileSize'),
+                  aggregation: isSession ? undefined : tr('data.aggSum'),
+                  icon: IconStorage,
+                  value: fileValue,
+                  open: expanded.storage,
+                  onToggle: () => toggle('storage'),
+                },
+                detailList([
+                  [tr('data.fileSize'), anyFileSize ? formatBytes(totalFileBytes) : '—'],
+                  [tr('data.fileEvents'), anyEventCount ? formatExactNumber(totalEventCount) : '—'],
+                  ...(fileSizePartial ? [[tr('data.fileSessions'), `${fileSizeRows.length} / ${rows.length}`]] : []),
+                ]),
+                h('div', { className: 'dsg-dataHint' }, anyFileSize
+                  ? tr('data.fileSizeHint')
+                  : tr('data.fileSizeUnavailable')),
+                fileSizePartial
+                  ? h('div', { className: 'dsg-dataHint' }, tr('data.fileSizePartial'))
+                  : null,
+                eventCountPartial
+                  ? h('div', { className: 'dsg-dataHint' }, tr('data.fileEventPartial'))
+                  : null,
+              ),
+              h(
+                StatRow,
+                {
+                  label: tr('data.cost'),
+                  aggregation: isSession ? undefined : tr('data.aggSum'),
+                  icon: IconCoin,
+                  value: pricingConfigured(pricing) && knownCosts.length > 0 ? formatCost(totalCost) : '—',
+                  open: expanded.cost,
+                  onToggle: () => toggle('cost'),
+                },
+                !pricingConfigured(pricing)
+                  ? h('div', { className: 'dsg-dataHint' }, `${tr('data.noPrice')} · ${tr('data.priceHint')}`)
+                  : !anyUsage
+                    ? h('div', { className: 'dsg-dataHint' }, tr('data.noCostUsage'))
+                    : h(
+                      React.Fragment,
+                      null,
+                      h(StatBar, {
+                        parts: costPeriods.map((period) => ({
+                          key: period.key,
+                          value: period.cost ?? 0,
+                          className: period.key === 'peak' ? 'dsg-segPeak' : 'dsg-segOffPeak',
+                        })),
+                      }),
+                      h('div', { className: 'dsg-dataHint' }, `${tr('data.perMillion')} · ${tr('data.peakSchedule')}`),
+                      ...costPeriods
+                        .filter((period) => period.usage.total > 0)
+                        .map((period) => h(
+                          'div',
+                          { key: period.key, className: 'dsg-dataCostPeriod' },
+                          h(
+                            'div',
+                            { className: 'dsg-dataCostPeriodTitle' },
+                            h('span', {}, period.label),
+                            h('span', {}, formatCost(period.cost)),
+                          ),
+                          h('div', { className: 'dsg-dataCostHead' },
+                            h('span', {}, tr('data.item')),
+                            h('span', {}, tr('data.tokens')),
+                            h('span', {}, tr('data.price')),
+                            h('span', {}, tr('data.amount'))),
+                          ...periodParts.map((part) => h(
+                            'div',
+                            { key: part.key, className: 'dsg-dataCostRow' },
+                            h('span', { className: 'dsg-dataCostLabel' }, h('span', { className: `dsg-statSwatch dsg-seg${part.key.charAt(0).toUpperCase()}${part.key.slice(1)}`, 'aria-hidden': 'true' }), part.label),
+                            h('span', { className: 'dsg-dataCostTokens' }, formatCompactNumber(period.usage[part.field])),
+                            h('span', { className: 'dsg-dataCostPrice' }, Number.isFinite(Number(period.rates?.[part.field])) ? `¥${Number(period.rates[part.field]).toFixed(4)}` : '—'),
+                            h('span', { className: 'dsg-dataCostAmount' }, formatCost(
+                              Number.isFinite(Number(period.rates?.[part.field]))
+                                ? period.usage[part.field] / 1e6 * Number(period.rates[part.field])
+                                : null,
+                            )),
+                          )),
+                        )),
+                      h('div', { className: 'dsg-dataCostTotal' },
+                        h('span', {}, tr('data.cost')),
+                        h('span', {}, formatCost(totalCost))),
+                      estimatedPeriod
+                        ? h('div', { className: 'dsg-dataHint' }, tr('data.estimatedPeriod'))
+                        : null,
+                      totalCost === null && pricingConfigured(pricing)
+                        ? h('div', { className: 'dsg-dataHint' }, tr('data.missingPeriodPrice'))
+                        : null,
+                      periodPartial
+                        ? h('div', { className: 'dsg-dataHint' }, tr('data.noPeriodData'))
+                        : null,
+                      costPartial
+                        ? h('div', { className: 'dsg-dataHint' }, tr('data.costPartial'))
+                        : null,
+                    ),
+              ),
+              showToolSection ? h(
+                StatRow,
+                {
+                  label: tr('data.tools'),
+                  icon: IconWrench,
+                  value: toolsValue,
+                  open: expanded.tools,
+                  onToggle: () => toggle('tools'),
+                },
+                h(
+                  'div',
+                  { className: 'dsg-dataToolModes', role: 'group', 'aria-label': tr('data.tools') },
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dsg-dataToolMode' + (toolsMode === 'available' ? ' active' : ''),
+                      'aria-pressed': toolsMode === 'available',
+                      onClick: () => setToolsMode('available'),
+                    },
+                    `${tr('data.toolsAvailable')} (${availableTools})`,
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dsg-dataToolMode' + (toolsMode === 'unavailable' ? ' active' : ''),
+                      'aria-pressed': toolsMode === 'unavailable',
+                      onClick: () => setToolsMode('unavailable'),
+                    },
+                    `${tr('data.toolsClosed')} (${closedTools})`,
+                  ),
+                ),
+                visibleTools.length > 0
+                  ? h(
+                      'div',
+                      { className: 'dsg-dataTools' },
+                      visibleTools.map((tool) => h(
+                        'div',
+                        { key: tool.name, className: 'dsg-dataToolRow' },
+                        h(
+                          'span',
+                          { className: 'dsg-dataToolName' },
+                          tool.available ? null : h('span', { className: 'dsg-dataToolMuted' }, '· '),
+                          tool.name,
+                        ),
+                        h(
+                          'span',
+                          { className: 'dsg-dataToolStats' },
+                          `${tool.calls} ${tr('data.toolCalls')}`,
+                          tool.errors > 0 ? ` · ${tool.errors} ${tr('data.toolErrors')}` : '',
+                        ),
+                      )),
+                    )
+                  : h('div', { className: 'dsg-dataHint' }, loading
+                      ? tr('data.loading')
+                      : tools.length === 0 ? tr('data.toolNoVisible')
+                        : toolsMode === 'available' ? tr('data.noAvailableTools') : tr('data.noClosedTools')),
+                h('div', { className: 'dsg-dataHint' }, tr('data.toolsScope')),
+                toolSnapshot
+                  ? h('div', { className: 'dsg-dataHint' }, tr('data.toolSnapshot'))
+                  : null,
+                ...toolExtraNotes,
+              ) : null,
+              isSession && !showToolSection && toolHideNotice
+                ? h('div', { className: 'dsg-dataHint' }, toolHideNotice)
+                : null,
+            ),
+          ),
+          h(
+            'footer',
+            { className: 'dsg-dataFooter' },
+            h('span', {}, tr('data.note')),
+            loading ? h('span', {}, tr('data.loading')) : null,
+          ),
+        ),
+      );
+    }
+
+    function DeleteSessionDialog(props) {
+      const { sessionId, title, knownRunning, knownSubagents, currentSessionId, tr: translator, onClose, onDeleted } = props;
+      const tr = typeof translator === 'function' ? translator : translate;
+      const [preflight, setPreflight] = React.useState(null);
+      const [loading, setLoading] = React.useState(true);
+      const [error, setError] = React.useState(null);
+      const [submitting, setSubmitting] = React.useState(false);
+
+      React.useEffect(() => {
+        let active = true;
+        requestSessionDelete({ sessionId, confirm: false, knownSubagents, currentSessionId }).then((result) => {
+          if (!active) return;
+          setPreflight(result);
+        }).catch((reason) => {
+          if (active) setError(reason.message);
+        }).finally(() => {
+          if (active) setLoading(false);
+        });
+        return () => {
+          active = false;
+        };
+      }, [sessionId]);
+
+      React.useEffect(() => {
+        const onKeyDown = (event) => {
+          if (event.key === 'Escape' && !submitting) onClose();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+      }, [onClose, submitting]);
+
+      const children = Array.isArray(preflight?.children) ? preflight.children : [];
+      const running = Array.isArray(preflight?.running) ? preflight.running : [];
+      const childCount = Math.max(children.length, Number(knownSubagents) || 0);
+      const hasRunning = running.length > 0 || knownRunning === true;
+      const safety = preflight?.safety ?? null;
+      const canDelete = Boolean(preflight) && safety?.ok !== false && !submitting;
+
+      const submit = () => {
+        if (!canDelete) return;
+        setSubmitting(true);
+        setError(null);
+        requestSessionDelete({
+          sessionId,
+          confirm: true,
+          cascadeSubagents: childCount > 0,
+          stopRunning: hasRunning,
+          knownSubagents: childCount,
+          currentSessionId,
+          title,
+        }).then((result) => {
+          onDeleted(result);
+        }).catch((reason) => {
+          setError(reason.message);
+          setSubmitting(false);
+        });
+      };
+
+      return h(
+        'div',
+        {
+          className: 'dsg-deleteOverlay',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget && !submitting) onClose();
+          },
+        },
+        h(
+          'section',
+          { className: 'dsg-deletePanel', role: 'dialog', 'aria-modal': 'true', 'aria-label': tr('delete.title') },
+          h('div', { className: 'dsg-deleteTitle' }, tr('delete.title')),
+          h('div', { className: 'dsg-deleteTarget' }, `「${title}」`),
+          h('p', { className: 'dsg-deleteWarning' }, tr('delete.warning')),
+          loading
+            ? h('div', { className: 'dsg-deleteMuted' }, tr('delete.checking'))
+            : null,
+          safety
+            ? h(
+                'div',
+                { className: 'dsg-deleteSafety ' + (safety.ok ? 'ok' : 'fail') },
+                h('div', { className: 'dsg-deleteSafetyTitle' }, safety.ok ? tr('delete.safetyOk') : tr('delete.safetyFail')),
+                safety.ok
+                  ? null
+                  : h('div', { className: 'dsg-deleteSafetyList' },
+                      safety.checks
+                        .filter((check) => !check.ok)
+                        .map((check) => h('div', { key: check.key }, `· ${tr(`delete.safety.${check.key}`)}`))),
+              )
+            : null,
+          h(
+            'div',
+            { className: 'dsg-deleteOperations' },
+            h('div', { className: 'dsg-deleteOperationsTitle' }, tr('delete.willDo')),
+            h('div', { className: 'dsg-deleteOperation' }, `• ${tr('delete.willRemove')}`),
+            hasRunning
+              ? h('div', { className: 'dsg-deleteOperation' }, `• ${tr('delete.willStop')}`)
+              : null,
+            childCount > 0
+              ? h('div', { className: 'dsg-deleteOperation' }, `• ${tr('delete.willCascade', { count: childCount })}`)
+              : null,
+          ),
+          error ? h('div', { className: 'dsg-deleteError' }, error) : null,
+          h(
+            'div',
+            { className: 'dsg-deleteActions' },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsg-deleteButton',
+                disabled: submitting,
+                onClick: onClose,
+              },
+              tr('delete.cancel'),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsg-deleteButton danger',
+                disabled: !canDelete,
+                onClick: submit,
+              },
+              submitting ? tr('delete.deleting') : tr('delete.action'),
+            ),
+          ),
+        ),
+      );
+    }
+
+    function SessionGroupsSettings(props) {
+      const tr = typeof props.t === 'function' ? props.t : translate;
+      const [runningLight, setRunningLight] = React.useState(() => loadPrefs().runningLight === true);
+      const [priceMode, setPriceMode] = React.useState('peak');
+      const [holidayText, setHolidayText] = React.useState(() => (loadPrefs().pricing?.holidays ?? []).join(', '));
+      const makePriceValues = (pricing) => {
+        const source = pricing ?? {};
+        const valuesFor = (rates) => ({
+          input: rates?.input === undefined ? '' : String(rates.input),
+          cacheRead: rates?.cacheRead === undefined ? '' : String(rates.cacheRead),
+          cacheWrite: rates?.cacheWrite === undefined ? '' : String(rates.cacheWrite),
+          output: rates?.output === undefined ? '' : String(rates.output),
+        });
+        return {
+          peak: valuesFor(source.peak),
+          offPeak: valuesFor(source.offPeak),
+        };
+      };
+      const [priceValues, setPriceValues] = React.useState(() => makePriceValues(loadPrefs().pricing));
+
+      React.useEffect(() => {
+        const sync = () => {
+          const prefs = loadPrefs();
+          setRunningLight(prefs.runningLight === true);
+          setHolidayText((prefs.pricing?.holidays ?? []).join(', '));
+          setPriceValues(makePriceValues(prefs.pricing));
+        };
+        window.addEventListener(BRIDGE_EVENT, sync);
+        return () => window.removeEventListener(BRIDGE_EVENT, sync);
+      }, []);
+
+      const toggleRunningLight = () => {
+        const next = !runningLight;
+        setRunningLight(next);
+        setRunningLightPreference(next);
+      };
+
+      const updatePrice = (key, raw) => {
+        setPriceValues((previous) => ({
+          ...previous,
+          [priceMode]: { ...previous[priceMode], [key]: raw },
+        }));
+      };
+
+      const commitPrice = (key) => {
+        const trimmed = String(priceValues[priceMode]?.[key] ?? '').trim();
+        const numeric = trimmed === '' ? undefined : Number(trimmed);
+        if (numeric !== undefined && (!Number.isFinite(numeric) || numeric < 0)) return;
+        const prefs = loadPrefs();
+        const pricing = {
+          peak: { ...(prefs.pricing?.peak ?? {}) },
+          offPeak: { ...(prefs.pricing?.offPeak ?? {}) },
+          currency: 'CNY',
+          touched: true,
+          ...(Array.isArray(prefs.pricing?.holidays) && prefs.pricing.holidays.length > 0 ? { holidays: prefs.pricing.holidays } : {}),
+        };
+        if (numeric === undefined) delete pricing[priceMode][key];
+        else pricing[priceMode][key] = numeric;
+        savePrefs({ ...prefs, pricing });
+        try {
+          window.dispatchEvent(new Event(BRIDGE_EVENT));
+        } catch {
+          /* the data panel reads the value on its next open */
+        }
+      };
+
+      const savePrices = () => {
+        const pricing = {
+          peak: {},
+          offPeak: {},
+          currency: 'CNY',
+          touched: true,
+        };
+        for (const mode of ['peak', 'offPeak']) {
+          for (const key of ['input', 'cacheRead', 'cacheWrite', 'output']) {
+            const trimmed = String(priceValues[mode]?.[key] ?? '').trim();
+            if (trimmed === '') continue;
+            const numeric = Number(trimmed);
+            if (!Number.isFinite(numeric) || numeric < 0) return;
+            pricing[mode][key] = numeric;
+          }
+        }
+        const prefs = loadPrefs();
+        if (Array.isArray(prefs.pricing?.holidays) && prefs.pricing.holidays.length > 0) {
+          pricing.holidays = prefs.pricing.holidays;
+        }
+        savePrefs({ ...prefs, pricing });
+        try {
+          window.dispatchEvent(new Event(BRIDGE_EVENT));
+        } catch {
+          /* the data panel reads the value on its next open */
+        }
+      };
+
+      const commitHolidays = () => {
+        const days = [...new Set(
+          String(holidayText)
+            .split(/[,，\s]+/)
+            .map((day) => day.trim())
+            .filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day)),
+        )].sort();
+        const prefs = loadPrefs();
+        const pricing = {
+          peak: { ...(prefs.pricing?.peak ?? {}) },
+          offPeak: { ...(prefs.pricing?.offPeak ?? {}) },
+          currency: 'CNY',
+          touched: true,
+        };
+        if (days.length > 0) pricing.holidays = days;
+        savePrefs({ ...prefs, pricing });
+        setHolidayText(days.join(', '));
+        try {
+          window.dispatchEvent(new Event(BRIDGE_EVENT));
+        } catch {
+          /* the data panel reads the value on its next open */
+        }
+      };
+
+      const label = tr('settings.runningLight');
+      return h(
+        'div',
+        { className: 'dsg-settingsPage' },
+        h('h2', { className: 'dsg-settingsTitle' }, tr('settings.title')),
+        h('p', { className: 'dsg-settingsIntro' }, tr('settings.intro')),
+        h(
+          'div',
+          { className: 'dsg-settingsRow' },
+          h(
+            'div',
+            { className: 'dsg-settingsMain' },
+            h(
+              'div',
+              { className: 'dsg-settingsLabelRow' },
+              h(
+                'span',
+                { className: 'dsg-settingsPreviewStatus', 'aria-hidden': 'true' },
+                h(StateDot, { state: 'ongoing' }),
+              ),
+              h('span', { className: 'dsg-settingsLabel' }, label),
+            ),
+            h('div', { className: 'dsg-settingsHint' }, tr('settings.runningLightHint')),
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              role: 'switch',
+              className: 'dsg-switch',
+              'aria-checked': runningLight,
+              'aria-label': label,
+              onClick: toggleRunningLight,
+            },
+            h('span', { className: 'dsg-switchThumb', 'aria-hidden': 'true' }),
+          ),
+        ),
+        h(
+          'div',
+          { className: 'dsg-settingsRow' },
+          h(
+            'div',
+            { className: 'dsg-settingsMain' },
+            h(
+              'div',
+              { className: 'dsg-settingsLabelRow' },
+              h('span', { className: 'dsg-settingsLabel' }, tr('settings.pricing')),
+            ),
+            h('div', { className: 'dsg-settingsHint' }, tr('settings.pricingHint')),
+            h(
+              'div',
+              { className: 'dsg-priceModes', role: 'group', 'aria-label': tr('settings.pricing') },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsg-priceMode' + (priceMode === 'peak' ? ' active' : ''),
+                  'aria-pressed': priceMode === 'peak',
+                  onClick: () => setPriceMode('peak'),
+                },
+                tr('settings.peak'),
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsg-priceMode' + (priceMode === 'offPeak' ? ' active' : ''),
+                  'aria-pressed': priceMode === 'offPeak',
+                  onClick: () => setPriceMode('offPeak'),
+                },
+                tr('settings.offPeak'),
+              ),
+            ),
+            h(
+              'div',
+              { className: 'dsg-priceGrid' },
+              [
+                ['input', tr('settings.priceInput')],
+                ['cacheRead', tr('settings.priceCacheRead')],
+                ['cacheWrite', tr('settings.priceCacheWrite')],
+                ['output', tr('settings.priceOutput')],
+              ].map(([key, fieldLabel]) => h(
+                'label',
+                { key, className: 'dsg-priceField' },
+                h('span', {}, fieldLabel),
+                h('input', {
+                  className: 'dsg-priceInput',
+                  type: 'number',
+                  min: '0',
+                  step: '0.001',
+                  inputMode: 'decimal',
+                  value: priceValues[priceMode]?.[key] ?? '',
+                  placeholder: '0.00',
+                  onChange: (event) => updatePrice(key, event.target.value),
+                  onBlur: () => commitPrice(key),
+                  onKeyDown: (event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  },
+                }),
+              )),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsg-priceSave',
+                onClick: savePrices,
+              },
+              tr('settings.savePrices'),
+            ),
+            h(
+              'label',
+              { className: 'dsg-holidayField' },
+              h('span', {}, tr('settings.holidays')),
+              h('input', {
+                className: 'dsg-priceInput',
+                type: 'text',
+                value: holidayText,
+                placeholder: tr('settings.holidaysPlaceholder'),
+                onChange: (event) => setHolidayText(event.target.value),
+                onBlur: commitHolidays,
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  }
+                },
+              }),
+            ),
+            h('div', { className: 'dsg-settingsHint' }, tr('settings.holidaysHint')),
+          ),
+        ),
+      );
+    }
+
+    function DataSettings(props) {
+      const tr = typeof props.t === 'function' ? props.t : translate;
+      const [priceMode, setPriceMode] = React.useState('peak');
+      const [holidayText, setHolidayText] = React.useState(() => (loadPrefs().pricing?.holidays ?? []).join(', '));
+      const makePriceValues = (pricing) => {
+        const source = pricing ?? {};
+        const valuesFor = (rates) => ({
+          input: rates?.input === undefined ? '' : String(rates.input),
+          cacheRead: rates?.cacheRead === undefined ? '' : String(rates.cacheRead),
+          cacheWrite: rates?.cacheWrite === undefined ? '' : String(rates.cacheWrite),
+          output: rates?.output === undefined ? '' : String(rates.output),
+        });
+        return { peak: valuesFor(source.peak), offPeak: valuesFor(source.offPeak) };
+      };
+      const [priceValues, setPriceValues] = React.useState(() => makePriceValues(loadPrefs().pricing));
+
+      React.useEffect(() => {
+        const sync = () => {
+          const prefs = loadPrefs();
+          setHolidayText((prefs.pricing?.holidays ?? []).join(', '));
+          setPriceValues(makePriceValues(prefs.pricing));
+        };
+        window.addEventListener(BRIDGE_EVENT, sync);
+        return () => window.removeEventListener(BRIDGE_EVENT, sync);
+      }, []);
+
+      const updatePrice = (key, raw) => {
+        setPriceValues((previous) => ({
+          ...previous,
+          [priceMode]: { ...previous[priceMode], [key]: raw },
+        }));
+      };
+
+      const writePricing = (pricing) => {
+        const prefs = loadPrefs();
+        savePrefs({ ...prefs, pricing });
+        try { window.dispatchEvent(new Event(BRIDGE_EVENT)); } catch { /* next open reads it */ }
+      };
+
+      const commitPrice = (key) => {
+        const trimmed = String(priceValues[priceMode]?.[key] ?? '').trim();
+        const numeric = trimmed === '' ? undefined : Number(trimmed);
+        if (numeric !== undefined && (!Number.isFinite(numeric) || numeric < 0)) return;
+        const prefs = loadPrefs();
+        const pricing = {
+          peak: { ...(prefs.pricing?.peak ?? {}) },
+          offPeak: { ...(prefs.pricing?.offPeak ?? {}) },
+          currency: 'CNY',
+          touched: true,
+          ...(Array.isArray(prefs.pricing?.holidays) && prefs.pricing.holidays.length > 0 ? { holidays: prefs.pricing.holidays } : {}),
+        };
+        if (numeric === undefined) delete pricing[priceMode][key];
+        else pricing[priceMode][key] = numeric;
+        writePricing(pricing);
+      };
+
+      const savePrices = () => {
+        const pricing = { peak: {}, offPeak: {}, currency: 'CNY', touched: true };
+        for (const mode of ['peak', 'offPeak']) {
+          for (const key of ['input', 'cacheRead', 'cacheWrite', 'output']) {
+            const trimmed = String(priceValues[mode]?.[key] ?? '').trim();
+            if (trimmed === '') continue;
+            const numeric = Number(trimmed);
+            if (!Number.isFinite(numeric) || numeric < 0) return;
+            pricing[mode][key] = numeric;
+          }
+        }
+        const prefs = loadPrefs();
+        if (Array.isArray(prefs.pricing?.holidays) && prefs.pricing.holidays.length > 0) pricing.holidays = prefs.pricing.holidays;
+        writePricing(pricing);
+      };
+
+      const commitHolidays = () => {
+        const days = [...new Set(
+          String(holidayText)
+            .split(/[,，\s]+/)
+            .map((day) => day.trim())
+            .filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day)),
+        )].sort();
+        const prefs = loadPrefs();
+        const pricing = {
+          peak: { ...(prefs.pricing?.peak ?? {}) },
+          offPeak: { ...(prefs.pricing?.offPeak ?? {}) },
+          currency: 'CNY',
+          touched: true,
+        };
+        if (days.length > 0) pricing.holidays = days;
+        writePricing(pricing);
+        setHolidayText(days.join(', '));
+      };
+
+      return h(
+        'div',
+        { className: 'dsg-settingsPage' },
+        h('h2', { className: 'dsg-settingsTitle' }, tr('settings.title')),
+        h('p', { className: 'dsg-settingsIntro' }, tr('settings.intro')),
+        h(
+          'div',
+          { className: 'dsg-settingsRow' },
+          h(
+            'div',
+            { className: 'dsg-settingsMain' },
+            h('div', { className: 'dsg-settingsLabelRow' }, h('span', { className: 'dsg-settingsLabel' }, tr('settings.pricing'))),
+            h('div', { className: 'dsg-settingsHint' }, tr('settings.pricingHint')),
+            h(
+              'div',
+              { className: 'dsg-priceModes', role: 'group', 'aria-label': tr('settings.pricing') },
+              h('button', {
+                type: 'button',
+                className: 'dsg-priceMode' + (priceMode === 'peak' ? ' active' : ''),
+                'aria-pressed': priceMode === 'peak',
+                onClick: () => setPriceMode('peak'),
+              }, tr('settings.peak')),
+              h('button', {
+                type: 'button',
+                className: 'dsg-priceMode' + (priceMode === 'offPeak' ? ' active' : ''),
+                'aria-pressed': priceMode === 'offPeak',
+                onClick: () => setPriceMode('offPeak'),
+              }, tr('settings.offPeak')),
+            ),
+            h(
+              'div',
+              { className: 'dsg-priceGrid' },
+              [
+                ['input', tr('settings.priceInput')],
+                ['cacheRead', tr('settings.priceCacheRead')],
+                ['cacheWrite', tr('settings.priceCacheWrite')],
+                ['output', tr('settings.priceOutput')],
+              ].map(([key, fieldLabel]) => h(
+                'label',
+                { key, className: 'dsg-priceField' },
+                h('span', {}, fieldLabel),
+                h('input', {
+                  className: 'dsg-priceInput',
+                  type: 'number',
+                  min: '0',
+                  step: '0.001',
+                  inputMode: 'decimal',
+                  value: priceValues[priceMode]?.[key] ?? '',
+                  placeholder: '0.00',
+                  onChange: (event) => updatePrice(key, event.target.value),
+                  onBlur: () => commitPrice(key),
+                  onKeyDown: (event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  },
+                }),
+              )),
+            ),
+            h('button', { type: 'button', className: 'dsg-priceSave', onClick: savePrices }, tr('settings.savePrices')),
+            h(
+              'label',
+              { className: 'dsg-holidayField' },
+              h('span', {}, tr('settings.holidays')),
+              h('input', {
+                className: 'dsg-priceInput',
+                type: 'text',
+                value: holidayText,
+                placeholder: tr('settings.holidaysPlaceholder'),
+                onChange: (event) => setHolidayText(event.target.value),
+                onBlur: commitHolidays,
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  }
+                },
+              }),
+            ),
+            h('div', { className: 'dsg-settingsHint' }, tr('settings.holidaysHint')),
+          ),
+        ),
+      );
+    }
+
+    function SessionRow(props) {
+      const {
+        sessionId,
+        title,
+        blank,
+        menuOpen,
+        scheduleTasks,
+        timeText,
+        statuses,
+        showStatus,
+        active,
+        pinned,
+        archived,
+        dragging,
+        dropPos,
+        dropGroup,
+        canDrag,
+        subagentCount,
+        subagentsExpanded,
+        onToggleSubagents,
+        editing,
+        editingValue,
+        t,
+        onOpen,
+        onRenameStart,
+        onRenameCommit,
+        onRenameCancel,
+        onTogglePin,
+        onMenu,
+        onHoverStart,
+        onHoverEnd,
+        renderSlot,
+        onDragStart,
+        onDragOver,
+        onDrop,
+        onDragEnd,
+      } = props;
+      const tr = typeof t === 'function' ? t : translate;
+      const blockDragRef = React.useRef(false);
+      const rowRef = React.useRef(null);
+      const titleRef = React.useRef(null);
+      const marquee = useTitleMarquee(titleRef);
+      React.useEffect(() => {
+        if (menuOpen === true || rowRef.current?.matches(':hover')) marquee.enter();
+        else marquee.leave();
+      }, [menuOpen, marquee]);
+      const blockDrag = () => {
+        blockDragRef.current = true;
+        window.setTimeout(() => {
+          blockDragRef.current = false;
+        }, 260);
+      };
+      const classes = ['dsg-sessionRow'];
+      if (active) classes.push('active');
+      if (dragging) classes.push('dragging');
+      if (dropPos === 'before') classes.push('dsg-dropBefore');
+      if (dropPos === 'after') classes.push('dsg-dropAfter');
+      if (dropGroup) classes.push('dsg-dropGroup');
+      if (showStatus) classes.push('hasStatus');
+      if (archived) classes.push('archived');
+      if (subagentCount > 0) classes.push('hasSubagents');
+      if (subagentCount > 0 && subagentsExpanded) classes.push('subagents-open');
+      return h(
+        'div',
+        {
+          className: classes.join(' '),
+          ref: rowRef,
+          role: 'button',
+          tabIndex: 0,
+          draggable: canDrag === true,
+          'data-session-id': sessionId,
+          'aria-label': title,
+          onClick: () => onOpen(sessionId),
+          onMouseEnter: (event) => onHoverStart?.(event, sessionId),
+          onMouseLeave: () => onHoverEnd?.(),
+          onPointerEnter: marquee.enter,
+          onPointerLeave: () => { if (menuOpen !== true) marquee.leave(); },
+          onContextMenu: (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onMenu(event, sessionId);
+          },
+          onKeyDown: (event) => {
+            if (event.target !== event.currentTarget) return;
+            if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+              event.preventDefault();
+              onMenu(event, sessionId);
+              return;
+            }
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onOpen(sessionId);
+            }
+          },
+          onDragStart: (event) => {
+            if (blockDragRef.current) {
+              event.preventDefault();
+              return;
+            }
+            onDragStart(event, sessionId);
+          },
+          onDragEnd,
+          onDragOver: canDrag ? (event) => onDragOver(event, sessionId) : undefined,
+          onDrop: canDrag ? (event) => onDrop(event, sessionId) : undefined,
+        },
+        subagentCount > 0
+          ? h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsg-subagentToggle',
+                title: subagentsExpanded
+                  ? (typeof t === 'function' ? t('subagents.collapse') : translate('subagents.collapse'))
+                  : (typeof t === 'function' ? t('subagents.expand') : translate('subagents.expand')),
+                'aria-label': subagentsExpanded
+                  ? (typeof t === 'function' ? t('subagents.collapse') : translate('subagents.collapse'))
+                  : (typeof t === 'function' ? t('subagents.expand') : translate('subagents.expand')),
+                'aria-expanded': subagentsExpanded === true,
+                onPointerDown: (event) => event.stopPropagation(),
+                onClick: (event) => {
+                  event.stopPropagation();
+                  if (onToggleSubagents) onToggleSubagents(sessionId);
+                },
+              },
+              subagentsExpanded
+                ? h(IconSubagent, { width: 14, height: 14 })
+                : h(IconSubagentGroup, { width: 14, height: 14 }),
+            )
+          : null,
+        !archived && !blank
+          ? showStatus
+            ? h(
+                'span',
+                {
+                  className: 'dsg-statusSlot',
+                  title: statuses.map((status) => status.label).join('，'),
+                  'aria-label': statuses.map((status) => status.label).join('，'),
+                },
+                h(StateDot, { state: statuses[0].state }),
+                statuses.map((status, index) => h(
+                  'span',
+                  { key: index, className: 'dsg-visuallyHidden' },
+                  status.label,
+                )),
+              )
+            : Array.isArray(scheduleTasks) && scheduleTasks.length > 0
+              ? h(
+                  'span',
+                  {
+                    className: 'dsg-leadingSlot dsg-scheduleClock',
+                    title: tr('schedule.mark', { count: scheduleTasks.length }),
+                    'aria-label': tr('schedule.mark', { count: scheduleTasks.length }),
+                    onClick: (event) => event.stopPropagation(),
+                  },
+                  h(IconClock, { width: 14, height: 14 }),
+                )
+              : null
+          : null,
+        editing
+          ? h(GroupNameEditor, {
+              initialValue: editingValue,
+              onCommit: onRenameCommit,
+              onCancel: onRenameCancel,
+            })
+          : h(
+              'span',
+              {
+                className: 'dsg-titleText',
+                ref: titleRef,
+                onDoubleClick: (event) => {
+                  event.stopPropagation();
+                  if (onRenameStart) onRenameStart();
+                },
+              },
+              title,
+            ),
+        h('span', { className: 'dsg-time' }, timeText),
+        typeof renderSlot === 'function'
+          ? h('span', { className: 'dsg-rowTrailing' }, renderSlot('sidebar.session.row.trailing', { sessionId }))
+          : null,
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'dsg-rowMore',
+            title: typeof t === 'function' ? t('session.menu') : translate('session.menu'),
+            'aria-label': typeof t === 'function' ? t('session.menu') : translate('session.menu'),
+            onPointerDown: (event) => {
+              event.stopPropagation();
+              blockDrag();
+            },
+            onClick: (event) => {
+              event.stopPropagation();
+              onMenu(event, sessionId);
+            },
+          },
+          h(IconMore, { width: 15, height: 15 }),
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'dsg-rowAction',
+            title: archived
+              ? (typeof t === 'function' ? t('session.unarchive') : translate('session.unarchive'))
+              : (typeof t === 'function' ? t('session.archive') : translate('session.archive')),
+            'aria-label': archived
+              ? (typeof t === 'function' ? t('session.unarchive') : translate('session.unarchive'))
+              : (typeof t === 'function' ? t('session.archive') : translate('session.archive')),
+            onPointerDown: (event) => event.stopPropagation(),
+            onClick: (event) => {
+              event.stopPropagation();
+              if (archived) props.onUnarchive(sessionId);
+              else props.onArchive(sessionId);
+            },
+          },
+          h(IconArchive, { width: 14, height: 14 }),
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'dsg-rowAction',
+            title: pinned
+              ? (typeof t === 'function' ? t('session.unpin') : translate('session.unpin'))
+              : (typeof t === 'function' ? t('session.pin') : translate('session.pin')),
+            'aria-label': pinned
+              ? (typeof t === 'function' ? t('session.unpin') : translate('session.unpin'))
+              : (typeof t === 'function' ? t('session.pin') : translate('session.pin')),
+            onPointerDown: (event) => event.stopPropagation(),
+            onClick: (event) => {
+              event.stopPropagation();
+              onTogglePin(sessionId);
+            },
+          },
+          pinned ? h(IconPinFill, { width: 14, height: 14 }) : h(IconPinOutline, { width: 14, height: 14 }),
+        ),
+        typeof renderSlot === 'function'
+          ? h('span', { className: 'dsg-rowExternalActions' }, renderSlot('sidebar.workspaces.session.row.action', { sessionId, displayTitle: title }))
+          : null,
+      );
+    }
+
+    function GroupHeader(props) {
+      const {
+        group,
+        count,
+        collapsed,
+        selected,
+        draggable,
+        statuses,
+        dropActive,
+        dropTopPosition,
+        dragging,
+        onToggle,
+        onMenu,
+        onAddSession,
+        onEditStart,
+        editing,
+        editingValue,
+        onEditChange,
+        onEditCommit,
+        onEditCancel,
+        onDragOver,
+        onDrop,
+        onDragStart,
+        onDragEnd,
+        t,
+      } = props;
+      const tr = typeof t === 'function' ? t : translate;
+      const blockDragRef = React.useRef(false);
+      const blockDrag = () => {
+        blockDragRef.current = true;
+        window.setTimeout(() => {
+          blockDragRef.current = false;
+        }, 260);
+      };
+      const classes = ['dsg-groupHeader'];
+      if (dropActive) classes.push('dsg-groupDrop');
+      if (dragging) classes.push('dsg-groupDragging');
+      if (selected) classes.push('selected');
+      if (dropTopPosition === 'before') classes.push('dsg-dropTopBefore');
+      if (dropTopPosition === 'after') classes.push('dsg-dropTopAfter');
+      return h(
+        'div',
+        {
+          className: classes.join(' '),
+          role: 'button',
+          tabIndex: 0,
+          draggable: draggable !== false,
+          'data-group-id': group.id,
+          'aria-label': tr('group.aria', { name: group.name }),
+          'aria-expanded': !collapsed,
+          'aria-current': selected ? 'true' : undefined,
+          style: groupColorVars(group.color),
+          onClick: onToggle,
+          onKeyDown: (event) => {
+            if (event.target !== event.currentTarget) return;
+            if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+              event.preventDefault();
+              onMenu(event);
+              return;
+            }
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onToggle();
+            }
+          },
+          onContextMenu: (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onMenu(event);
+          },
+          onDragOver,
+          onDrop,
+          onDragStart: (event) => {
+            if (blockDragRef.current || draggable === false) {
+              event.preventDefault();
+              return;
+            }
+            onDragStart(event, group.id);
+          },
+          onDragEnd,
+        },
+        h('span', { className: 'dsg-groupChevron' + (collapsed ? '' : ' open') }, h(IconChevron)),
+        Array.isArray(statuses) && statuses.length > 0
+          ? h(
+              'span',
+              {
+                className: 'dsg-groupStatuses',
+                title: statuses.map((status) => (
+                  status.count > 1 ? `${status.label} ×${status.count}` : status.label
+                )).join('，'),
+                'aria-label': statuses.map((status) => (
+                  status.count > 1 ? `${status.label} ×${status.count}` : status.label
+                )).join('，'),
+              },
+              statuses.map((status) => h(
+                'span',
+                { key: status.state, className: 'dsg-groupStatusItem' },
+                h(StateDot, { state: status.state }),
+                status.count > 1
+                  ? h('span', { className: 'dsg-groupStatusCount' }, String(status.count))
+                  : null,
+              )),
+            )
+          : null,
+        editing
+          ? h(GroupNameEditor, {
+              initialValue: editingValue,
+              onCommit: onEditCommit,
+              onCancel: onEditCancel,
+            })
+          : h('span', {
+              className: 'dsg-groupName',
+              title: group.name,
+              onDoubleClick: (event) => {
+                event.stopPropagation();
+                if (onEditStart) onEditStart();
+              },
+            }, group.name),
+        h('span', { className: 'dsg-groupCount' }, tr('group.count', { n: count })),
+        h(
+          'span',
+          { className: 'dsg-groupActions' },
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dsg-iconBtn',
+              style: { width: 16, height: 16 },
+              title: tr('group.newSession'),
+              'aria-label': tr('group.newSession'),
+              onClick: (event) => {
+                event.stopPropagation();
+                onAddSession();
+              },
+              onPointerDown: (event) => {
+                event.stopPropagation();
+                blockDrag();
+              },
+            },
+            h(IconNewChatCircle, { width: 16, height: 16 }),
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dsg-iconBtn',
+              style: { width: 16, height: 16 },
+              title: tr('group.menu'),
+              'aria-label': tr('group.menu'),
+              onClick: (event) => {
+                event.stopPropagation();
+                onMenu(event);
+              },
+              onPointerDown: (event) => {
+                event.stopPropagation();
+                blockDrag();
+              },
+            },
+            h(IconMore),
+          ),
+        ),
+      );
+    }
+
+    /* ── self-contained directory picker (modeled on the official browser) ── */
+
+    function directoryFailureText(error) {
+      if (error !== null && typeof error === 'object' && error.rpcError && typeof error.rpcError.message === 'string') {
+        return error.rpcError.message;
+      }
+      return error instanceof Error ? error.message : String(error);
+    }
+
+    function directorySeparator(listing) {
+      return listing && typeof listing.home === 'string' && listing.home.includes('\\') ? '\\' : '/';
+    }
+
+    function directoryCrumbs(listing, homeLabel) {
+      if (!listing) return [];
+      const homeIndex = Array.isArray(listing.crumbs)
+        ? listing.crumbs.findIndex((crumb) => crumb.path === listing.home)
+        : -1;
+      if (homeIndex === -1) return Array.isArray(listing.crumbs) ? listing.crumbs : [];
+      return [
+        { name: homeLabel, path: listing.home, hidden: false },
+        ...listing.crumbs.slice(homeIndex + 1),
+      ];
+    }
+
+    function DirectoryLevel({ entries, selectedPath, busy, showHidden, onPick, pathEditing }) {
+      const visible = entries.filter((entry) => (
+        entry.path === selectedPath || showHidden || !entry.hidden
+      ));
+      return h(
+        'div',
+        { className: 'dsgDir_column', role: 'list' },
+        visible.map((entry) => {
+          const selected = entry.path === selectedPath;
+          return h(
+            'span',
+            { key: entry.path, role: 'listitem', className: 'dsgDir_rowSeat' },
+            h(
+              'button',
+              {
+                type: 'button',
+                'aria-current': selected ? 'true' : undefined,
+                className: 'dsgDir_row' + (selected ? ' dsgDir_rowSelected' : ''),
+                disabled: busy,
+                onMouseDown: pathEditing
+                  ? (event) => event.preventDefault()
+                  : undefined,
+                onClick: () => onPick(entry),
+              },
+              selected
+                ? h(IconFolderOpen, { width: 16, height: 16, className: 'dsgDir_rowIconSelected' })
+                : h(IconFolderClose, { width: 16, height: 16, className: 'dsgDir_rowIcon' }),
+              h('span', { className: 'dsgDir_rowName' }, entry.name),
+              h(IconChevron, { width: 12, height: 12, className: 'dsgDir_rowChevron', strokeWidth: 1 }),
+            ),
+          );
+        }),
+      );
+    }
+
+    function DirectoryPickerDialog({ t, listDirectory, createDirectory, onPicked, onClose, busy }) {
+      const tr = typeof t === 'function' ? t : translate;
+      const [parent, setParent] = React.useState(null);
+      const [selected, setSelected] = React.useState(null);
+      const [child, setChild] = React.useState(null);
+      const [loading, setLoading] = React.useState(false);
+      const [error, setError] = React.useState(null);
+      const [pathDraft, setPathDraft] = React.useState(null);
+      const [showHidden, setShowHidden] = React.useState(false);
+      const [folderDraft, setFolderDraft] = React.useState(null);
+      const [creating, setCreating] = React.useState(false);
+      const [createError, setCreateError] = React.useState(null);
+      const sequence = React.useRef(0);
+      const pathInputRef = React.useRef(null);
+
+      const loadLevel = (path) => {
+        const seq = ++sequence.current;
+        setLoading(true);
+        setError(null);
+        return listDirectory(path).then((level) => {
+          if (seq !== sequence.current) return null;
+          setParent(level);
+          setSelected(null);
+          setChild(null);
+          setLoading(false);
+          return level;
+        }, (reason) => {
+          if (seq !== sequence.current) return null;
+          setLoading(false);
+          setError(directoryFailureText(reason));
+          return null;
+        });
+      };
+
+      React.useEffect(() => {
+        void loadLevel(undefined);
+        return () => {
+          sequence.current += 1;
+        };
+      }, []);
+
+      React.useEffect(() => {
+        if (pathDraft !== null && pathInputRef.current) pathInputRef.current.focus();
+      }, [pathDraft]);
+
+      const pick = (entry) => {
+        if (busy) return;
+        setPathDraft(null);
+        setSelected(entry);
+        setChild(null);
+        setLoading(true);
+        setError(null);
+        const seq = ++sequence.current;
+        listDirectory(entry.path).then((next) => {
+          if (seq !== sequence.current) return;
+          setChild(next);
+          setLoading(false);
+        }, (reason) => {
+          if (seq !== sequence.current) return;
+          setLoading(false);
+          setError(directoryFailureText(reason));
+          setSelected(null);
+        });
+      };
+
+      const advance = (entry) => {
+        if (child === null || busy) return;
+        setParent(child);
+        pick(entry);
+      };
+
+      const navigate = (path) => {
+        setPathDraft(null);
+        void loadLevel(path);
+      };
+
+      const submitDraft = () => {
+        if (pathDraft === null) return;
+        const next = pathDraft.trim();
+        if (!next) return;
+        void loadLevel(next).then((level) => {
+          if (level) setPathDraft(null);
+        });
+      };
+
+      const beginPathEdit = () => {
+        if (!parent) return;
+        const sep = directorySeparator(parent);
+        const base = selected?.path ?? parent.path;
+        setPathDraft(base.endsWith(sep) ? base : base + sep);
+      };
+
+      const targetPath = selected?.path ?? parent?.path ?? null;
+      const targetName = selected?.name
+        ?? (parent ? directoryCrumbs(parent, tr('browser.home')).slice(-1)[0]?.name ?? parent.path : '');
+      const crumbs = parent ? directoryCrumbs(parent, tr('browser.home')) : [];
+      const twoPane = selected !== null;
+      const parentInert = busy || folderDraft !== null;
+
+      const confirmCreate = () => {
+        if (targetPath === null || folderDraft === null || creating) return;
+        const name = folderDraft.trim();
+        if (!name) return;
+        const generation = sequence.current;
+        setCreating(true);
+        setCreateError(null);
+        createDirectory(targetPath, name).then((createdPath) => {
+          if (generation !== sequence.current) return;
+          setCreating(false);
+          setFolderDraft(null);
+          const seq = ++sequence.current;
+          setLoading(true);
+          listDirectory(targetPath).then((level) => {
+            if (seq !== sequence.current) return;
+            setParent(level);
+            setSelected({ name, path: createdPath, hidden: false });
+            setChild(null);
+            setLoading(false);
+            setError(null);
+          }, (reason) => {
+            if (seq !== sequence.current) return;
+            setLoading(false);
+            setError(directoryFailureText(reason));
+          });
+        }, (reason) => {
+          if (generation !== sequence.current) return;
+          setCreating(false);
+          setCreateError(directoryFailureText(reason));
+        });
+      };
+
+      const closeCreate = () => {
+        if (creating) return;
+        setFolderDraft(null);
+        setCreateError(null);
+      };
+
+      const panel = h(
+        'div',
+        {
+          className: 'dsgDir_dialog dsgDir_panel',
+          role: 'dialog',
+          'aria-modal': 'true',
+          'aria-label': tr('browser.title'),
+          onKeyDown: (event) => {
+            if (event.key !== 'Escape') return;
+            if (folderDraft !== null) {
+              event.stopPropagation();
+              closeCreate();
+              return;
+            }
+            if (pathDraft !== null) {
+              event.stopPropagation();
+              setPathDraft(null);
+              return;
+            }
+            event.stopPropagation();
+            onClose();
+          },
+          onMouseDown: (event) => event.stopPropagation(),
+        },
+        h(
+          'div',
+          { className: 'dsgDir_editorScope' },
+          h(
+            'div',
+            { className: 'dsgDir_header' },
+            h('h2', { className: 'dsgDir_title' }, tr('browser.title')),
+            h(
+              'div',
+              { className: 'dsgDir_crumbBar' },
+              pathDraft === null
+                ? [
+                    h(
+                      'span',
+                      { key: 'trail', className: 'dsgDir_crumbTrail', role: 'navigation' },
+                      crumbs.map((crumb, index) => h(
+                        'span',
+                        { key: crumb.path, className: 'dsgDir_crumbSeat' },
+                        index > 0
+                          ? h(IconChevron, { width: 12, height: 12, className: 'dsgDir_crumbChevron', strokeWidth: 1 })
+                          : null,
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            className: 'dsgDir_crumb',
+                            disabled: parentInert,
+                            title: crumb.path,
+                            onClick: () => navigate(crumb.path),
+                          },
+                          crumb.name,
+                        ),
+                      )),
+                    ),
+                    h(
+                      'button',
+                      {
+                        key: 'edit',
+                        type: 'button',
+                        className: 'dsgDir_crumbEditZone',
+                        'aria-label': tr('browser.editPath'),
+                        title: tr('browser.editPath'),
+                        disabled: parentInert,
+                        onClick: beginPathEdit,
+                      },
+                      h(IconEdit, { width: 14, height: 14, className: 'dsgDir_crumbEditGlyph' }),
+                    ),
+                  ]
+                : h('input', {
+                    key: 'draft',
+                    className: 'dsgDir_pathInput',
+                    ref: pathInputRef,
+                    value: pathDraft,
+                    'aria-label': tr('browser.editPath'),
+                    disabled: parentInert,
+                    onChange: (event) => setPathDraft(event.target.value),
+                    onKeyDown: (event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        submitDraft();
+                      } else if (event.key === 'Escape') {
+                        event.stopPropagation();
+                        setPathDraft(null);
+                      }
+                    },
+                    onBlur: () => setPathDraft(null),
+                  }),
+            ),
+          ),
+          h(
+            'div',
+            { className: 'dsgDir_content' },
+            h(
+              'div',
+              { className: 'dsgDir_millerRow' },
+              parent
+                ? h(DirectoryLevel, {
+                    entries: parent.entries ?? [],
+                    selectedPath: selected?.path ?? null,
+                    busy: parentInert,
+                    showHidden,
+                    pathEditing: pathDraft !== null,
+                    onPick: pick,
+                  })
+                : null,
+              twoPane ? h('span', { className: 'dsgDir_divider' }) : null,
+              twoPane && child
+                ? h(DirectoryLevel, {
+                    entries: child.entries ?? [],
+                    selectedPath: null,
+                    busy: parentInert,
+                    showHidden,
+                    pathEditing: pathDraft !== null,
+                    onPick: advance,
+                  })
+                : null,
+            ),
+            !parent && loading
+              ? h('div', { className: 'dsgDir_status dsgDir_loadingFloat', role: 'status' }, tr('browser.loading'))
+              : null,
+            (parent?.truncated === true || child?.truncated === true)
+              ? h('div', { className: 'dsgDir_status', role: 'status' }, tr('browser.truncated'))
+              : null,
+            error !== null
+              ? h('div', { className: 'dsgDir_error', role: 'alert' }, error)
+              : null,
+          ),
+          h(
+            'div',
+            { className: 'dsgDir_footerBar' },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsgDir_btn dsgDir_btnOutline',
+                disabled: parent === null || loading || parentInert || pathDraft !== null,
+                onClick: () => {
+                  setFolderDraft('');
+                  setCreateError(null);
+                },
+              },
+              h(IconPlus, { width: 14, height: 14 }),
+              h('span', null, tr('browser.newFolder')),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsgDir_showHiddenToggle'
+                  + (showHidden ? ' dsgDir_showHiddenToggleActive' : ''),
+                'aria-pressed': showHidden ? 'true' : 'false',
+                disabled: parentInert,
+                onClick: () => setShowHidden((previous) => !previous),
+              },
+              tr('browser.showHidden'),
+              showHidden ? h(IconCheck, { width: 14, height: 14 }) : null,
+            ),
+            h('span', { className: 'dsgDir_footerGap' }),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsgDir_btn dsgDir_btnOutline dsgDir_footerAction',
+                disabled: parentInert,
+                onClick: onClose,
+              },
+              tr('browser.cancel'),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsgDir_btn dsgDir_btnPrimary dsgDir_footerAction',
+                disabled: targetPath === null || loading || parentInert || pathDraft !== null,
+                onClick: () => {
+                  if (targetPath !== null) onPicked(targetPath);
+                },
+              },
+              tr('browser.open'),
+            ),
+          ),
+        ),
+      );
+
+      return h(
+        'div',
+        {
+          className: 'dsgDir_backdrop',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget && folderDraft === null && !busy) onClose();
+          },
+        },
+        panel,
+        folderDraft !== null
+          ? h(
+              'div',
+              {
+                className: 'dsgDir_createBackdrop',
+                onMouseDown: (event) => event.stopPropagation(),
+              },
+              h(
+                'div',
+                { className: 'dsgDir_createDialog dsgDir_createPanel', role: 'dialog', 'aria-modal': 'true' },
+                h(
+                  'div',
+                  { className: 'dsgDir_createBody' },
+                  h('h3', { className: 'dsgDir_createTitle' }, tr('browser.newFolder')),
+                  h('p', { className: 'dsgDir_createIn' }, tr('browser.createIn', { name: targetName })),
+                  h('input', {
+                    className: 'dsgDir_createInput',
+                    value: folderDraft,
+                    'aria-label': tr('browser.folderName'),
+                    placeholder: tr('browser.untitledFolder'),
+                    disabled: creating,
+                    autoFocus: true,
+                    onChange: (event) => setFolderDraft(event.target.value),
+                    onKeyDown: (event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        confirmCreate();
+                      } else if (event.key === 'Escape') {
+                        event.stopPropagation();
+                        closeCreate();
+                      }
+                    },
+                  }),
+                  createError !== null
+                    ? h('div', { className: 'dsgDir_error', role: 'alert' }, createError)
+                    : null,
+                  h(
+                    'div',
+                    { className: 'dsgDir_createActions' },
+                    h(
+                      'button',
+                      { type: 'button', className: 'dsgDir_btn dsgDir_btnOutline', disabled: creating, onClick: closeCreate },
+                      tr('browser.cancel'),
+                    ),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        className: 'dsgDir_btn dsgDir_btnPrimary',
+                        disabled: creating || folderDraft.trim() === '',
+                        onClick: confirmCreate,
+                      },
+                      tr('browser.create'),
+                    ),
+                  ),
+                ),
+              ),
+            )
+          : null,
+      );
+    }
+
+    function Rail({ t, expandSidebar, onAddWorkspace }) {
+      return h(
+        'div',
+        { className: 'dsg-rail' },
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'dsg-railBtn',
+            title: t('section.title'),
+            'aria-label': t('section.title'),
+            onClick: expandSidebar,
+          },
+          h(IconFolderClose, { width: 19, height: 19 }),
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'dsg-railBtn',
+            title: t('search.open'),
+            'aria-label': t('search.open'),
+            onClick: () => {
+              expandSidebar();
+              setTimeout(() => {
+                if (typeof window === 'undefined') return;
+                const input = document.querySelector('.dsg-searchInput');
+                if (input && typeof input.focus === 'function') input.focus();
+              }, 120);
+            },
+          },
+          h(IconSearch, { width: 18, height: 18 }),
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'dsg-railBtn',
+            title: t('addWorkspace'),
+            'aria-label': t('addWorkspace'),
+            onClick: () => {
+              expandSidebar();
+              setTimeout(onAddWorkspace, 120);
+            },
+          },
+          h(IconWorkspaceAdd, { width: 18, height: 18 }),
+        ),
+      );
+    }
+
+    /* ── session hover card ───────────────────────────────────────── */
+
+    function SessionHoverCard({
+      sessionId,
+      title,
+      cwd,
+      timeText,
+      scheduleTasks,
+      now,
+      statuses,
+      archived,
+      renderSlot,
+      onMouseEnter,
+      onMouseLeave,
+      style,
+      tr,
+    }) {
+      return h(
+        'div',
+        {
+          className: 'dsg-hoverCard',
+          role: 'tooltip',
+          'data-session-id': sessionId,
+          style,
+          onMouseEnter,
+          onMouseLeave,
+        },
+        h('div', { className: 'dsg-hoverTitle' }, title),
+        cwd ? h('div', { className: 'dsg-hoverPath', title: cwd }, cwd) : null,
+        timeText ? h('div', { className: 'dsg-hoverTime' }, timeText) : null,
+        Array.isArray(scheduleTasks) && scheduleTasks.length > 0
+          ? h(
+              'div',
+              { className: 'dsg-hoverTasks' },
+              scheduleTasks.slice(0, 2).map((task) => h(
+                'div',
+                { className: 'dsg-hoverTask', key: task.id ?? `${task.title}:${task.scheduledAt}` },
+                h('span', { className: 'dsg-hoverTaskIcon' }, h(IconClock, { width: 13, height: 13 })),
+                h(
+                  'span',
+                  { className: 'dsg-hoverTaskBody' },
+                  h('span', { className: 'dsg-hoverTaskName' }, task.title || tr('schedule.untitled')),
+                  h('span', { className: 'dsg-hoverTaskTime' }, scheduleTimeText(task, now, tr)),
+                ),
+              )),
+              scheduleTasks.length > 2
+                ? h('div', { className: 'dsg-hoverTaskMore' }, tr('schedule.more', { count: scheduleTasks.length - 2 }))
+                : null,
+            )
+          : null,
+        typeof renderSlot === 'function'
+          ? renderSlot('sidebar.session.row.hover', { sessionId })
+          : null,
+        ...statuses.map((status) => h(
+          'div',
+          { className: 'dsg-hoverStatus', key: status.label },
+          h(StateDot, { state: status.state }),
+          h('span', {}, status.label),
+        )),
+        archived
+          ? h('div', { className: 'dsg-hoverStatus dsg-hoverArchived' },
+              h(IconArchive, { width: 14, height: 14 }),
+              h('span', {}, tr('session.archived')))
+          : null,
+      );
+    }
+
+    /* ── browser ───────────────────────────────────────────────────── */
+
+    function SessionGroupsBrowser(props) {
+      const {
+        wide,
+        expandSidebar,
+        renderSlot,
+        scheduleCatalog,
+        dataProviderStore,
+        useSectionScroller,
+        useSessions,
+        useWorkspaces,
+        useSessionStatus,
+        usePanelInfo,
+        t,
+        openSession,
+        startSession,
+        archiveSession,
+        unarchiveSession,
+        pinSession,
+        unpinSession,
+        renameSession,
+        forkSession,
+        addWorkspace,
+        addWorkspaceAtPath,
+        listDirectory,
+        createDirectory,
+        insertSessionBefore,
+        renameWorkspace,
+        deleteWorkspace,
+        setGroupedMode,
+      } = props;
+
+      const [prefs, setPrefs] = React.useState(loadPrefs);
+      const [searchOpen, setSearchOpen] = React.useState(false);
+      const [searchText, setSearchText] = React.useState('');
+      const [editingGroup, setEditingGroup] = React.useState(null);
+      const [editingWorkspace, setEditingWorkspace] = React.useState(null);
+      const [editingSession, setEditingSession] = React.useState(null);
+      const [menu, setMenu] = React.useState(null);
+      const [dataPanel, setDataPanel] = React.useState(null);
+      const [deleteDialog, setDeleteDialog] = React.useState(null);
+      const [viewMenu, setViewMenu] = React.useState(null);
+      const [notice, setNotice] = React.useState(null);
+      const [colorEditor, setColorEditor] = React.useState(null);
+      const [toastPosition, setToastPosition] = React.useState(null);
+      const [addingWorkspace, setAddingWorkspace] = React.useState(false);
+      const [addWorkspaceDialog, setAddWorkspaceDialog] = React.useState(null);
+      const [overflowExpanded, setOverflowExpanded] = React.useState({});
+      const [expandedSubagentSessions, setExpandedSubagentSessions] = React.useState(() => new Set());
+      const [dragInfo, setDragInfo] = React.useState(null);
+      const [dropHint, setDropHint] = React.useState(null);
+      const dragRef = React.useRef(null);
+      const rootRef = React.useRef(null);
+      const noticeTimerRef = React.useRef(null);
+      const pendingGroupSessionRef = React.useRef(null);
+
+      const list = useSessions((state) => state);
+      const workspaceState = useWorkspaces((state) => state);
+      const sessionStatusesMap = typeof useSessionStatus === 'function'
+        ? useSessionStatus((state) => state)
+        : null;
+      const activePanelId = usePanelInfo((state) => state.activePanelId);
+      const sectionScroller = typeof useSectionScroller === 'function' ? useSectionScroller() : null;
+      const scheduleSnapshot = React.useSyncExternalStore(
+        scheduleCatalog && typeof scheduleCatalog.subscribe === 'function'
+          ? scheduleCatalog.subscribe
+          : noScheduleSubscribe,
+        scheduleCatalog && typeof scheduleCatalog.getSnapshot === 'function'
+          ? scheduleCatalog.getSnapshot
+          : getEmptyScheduleSnapshot,
+        getEmptyScheduleSnapshot,
+      );
+      const now = useNow(60000);
+      const dataProvider = React.useSyncExternalStore(
+        dataProviderStore && typeof dataProviderStore.subscribe === 'function'
+          ? dataProviderStore.subscribe
+          : noDataProviderSubscribe,
+        dataProviderStore && typeof dataProviderStore.getSnapshot === 'function'
+          ? dataProviderStore.getSnapshot
+          : getNullDataProvider,
+        getNullDataProvider,
+      );
+      const scheduleBySession = React.useMemo(() => {
+        const map = new Map();
+        for (const task of scheduleSnapshot.records ?? []) {
+          if (!task || task.status !== 'active') continue;
+          const ids = new Set(Array.isArray(task.involvedSessionIds) ? task.involvedSessionIds : []);
+          const targetId = scheduleTaskSessionId(task);
+          if (targetId) ids.add(targetId);
+          for (const sessionId of ids) {
+            const list = map.get(sessionId);
+            if (list) list.push(task);
+            else map.set(sessionId, [task]);
+          }
+        }
+        for (const list of map.values()) {
+          list.sort((left, right) => Date.parse(scheduleNextRun(left) ?? '') - Date.parse(scheduleNextRun(right) ?? ''));
+        }
+        return map;
+      }, [scheduleSnapshot]);
+      const [hoverCard, setHoverCard] = React.useState(null);
+      const hoverOpenTimerRef = React.useRef(null);
+      const hoverCloseTimerRef = React.useRef(null);
+      const hoverShownRef = React.useRef(false);
+
+      const tr = React.useCallback(
+        (key, params) => {
+          if (typeof t === 'function') {
+            const text = t(key, params);
+            if (text !== key) return text;
+          }
+          return interpolate(FALLBACK[key] ?? key, params);
+        },
+        [t],
+      );
+
+      const notify = React.useCallback((message, important = false) => {
+        if (important !== true) {
+          setNotice(null);
+          return;
+        }
+        setNotice(message);
+        if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+        noticeTimerRef.current = window.setTimeout(() => {
+          setNotice(null);
+          noticeTimerRef.current = null;
+        }, 2800);
+      }, []);
+
+      React.useEffect(() => {
+        if (!notice) {
+          setToastPosition(null);
+          return undefined;
+        }
+        const updatePosition = () => {
+          const element = rootRef.current;
+          if (!element) return;
+          const rect = element.getBoundingClientRect();
+          if (rect.width <= 0) return;
+          setToastPosition({
+            left: Math.round(rect.left + rect.width / 2),
+            bottom: 48,
+            maxWidth: Math.max(160, Math.round(rect.width - 24)),
+          });
+        };
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        return () => window.removeEventListener('resize', updatePosition);
+      }, [notice]);
+
+      React.useEffect(() => {
+        savePrefs(prefs);
+      }, [prefs]);
+
+      React.useEffect(() => {
+        const onPrefsChanged = () => setPrefs(loadPrefs());
+        window.addEventListener(BRIDGE_EVENT, onPrefsChanged);
+        return () => window.removeEventListener(BRIDGE_EVENT, onPrefsChanged);
+      }, []);
+
+      React.useEffect(() => () => {
+        if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+      }, []);
+
+
+      const workspaces = Array.isArray(workspaceState?.items) ? workspaceState.items : [];
+      const phase = workspaceState?.phase ?? 'pending';
+      const workspaceParents = React.useMemo(
+        () => buildWorkspaceParentMap(workspaces),
+        [workspaces],
+      );
+      const archivedSessionIds = React.useMemo(
+        () => new Set(Array.isArray(workspaceState?.archivedSessionIds) ? workspaceState.archivedSessionIds : []),
+        [workspaceState?.archivedSessionIds],
+      );
+      const pinnedSessionIds = React.useMemo(
+        () => new Set(Array.isArray(workspaceState?.pinnedSessionIds) ? workspaceState.pinnedSessionIds : []),
+        [workspaceState?.pinnedSessionIds],
+      );
+
+      const currentSessionId = React.useMemo(() => {
+        for (const id of list.ids ?? []) {
+          const row = list.byId?.[id];
+          if (row && (row.retainedBy?.mainView ?? 0) > 0) return id;
+        }
+        return null;
+      }, [list]);
+
+      const activeWorkspaceRef = React.useRef(null);
+      React.useEffect(() => {
+        if (prefs.workspaceTree !== true || prefs.flatList === true) {
+          activeWorkspaceRef.current = null;
+          return;
+        }
+        if (!currentSessionId) return;
+        const activeWorkspace = workspaces.find((workspace) => (
+          (workspace.sessionIds ?? []).includes(currentSessionId)
+        ));
+        if (!activeWorkspace) return;
+        if (activeWorkspaceRef.current === activeWorkspace.workspaceId) return;
+        activeWorkspaceRef.current = activeWorkspace.workspaceId;
+        const collapsed = prefs.collapsedWorkspaces ?? {};
+        const ancestors = [];
+        const seen = new Set();
+        let parentId = workspaceParents.get(activeWorkspace.workspaceId);
+        while (parentId !== undefined && !seen.has(parentId)) {
+          seen.add(parentId);
+          if (collapsed[parentId] === true) ancestors.push(parentId);
+          parentId = workspaceParents.get(parentId);
+        }
+        if (ancestors.length === 0) return;
+        setPrefs((previous) => {
+          const next = { ...(previous.collapsedWorkspaces ?? {}) };
+          let changed = false;
+          for (const workspaceId of ancestors) {
+            if (next[workspaceId]) {
+              delete next[workspaceId];
+              changed = true;
+            }
+          }
+          return changed ? { ...previous, collapsedWorkspaces: next } : previous;
+        });
+      }, [prefs.workspaceTree, prefs.flatList, prefs.collapsedWorkspaces, currentSessionId, workspaces, workspaceParents]);
+
+      React.useEffect(() => {
+        // Workspace data arrives asynchronously; reconciling against the empty
+        // pending snapshot would prune every saved group and persist the loss.
+        if (phase !== 'ready') return;
+        const signature = workspaces
+          .map((workspace) => workspace.workspaceId + ':' + (workspace.sessionIds ?? []).join(','))
+          .join('|');
+        setPrefs((previous) => {
+          let changed = false;
+          const memberSets = new Map();
+          for (const workspace of workspaces) {
+            memberSets.set(workspace.workspaceId, new Set(workspace.sessionIds ?? []));
+          }
+          const accounted = new Set(workspaces.flatMap((workspace) => workspace.sessionIds ?? []));
+          const strayIds = (list.ids ?? []).filter((id) => (
+            !accounted.has(id) && list.byId?.[id]?.origin !== 'subagent'
+          ));
+          if (strayIds.length > 0) memberSets.set(UNGROUPED_KEY, new Set(strayIds));
+          const nextGroups = {};
+          for (const [workspaceId, groups] of Object.entries(previous.groups ?? {})) {
+            const members = memberSets.get(workspaceId);
+            if (!members) {
+              changed = true;
+              continue;
+            }
+            const kept = [];
+            for (const group of groups) {
+              const sessionIds = group.sessionIds.filter((id) => members.has(id));
+              if (sessionIds.length !== group.sessionIds.length) changed = true;
+              const hasChildren = groups.some((candidate) => candidate.parentGroupId === group.id);
+              if (sessionIds.length === 0 && !hasChildren && !group.parentGroupId) {
+                changed = true;
+                continue;
+              }
+              kept.push(sessionIds.length === group.sessionIds.length ? group : { ...group, sessionIds });
+            }
+            const safeGroups = pruneEmptyGroupLeaves(sanitizeGroupParents(kept));
+            if (safeGroups.length !== kept.length) changed = true;
+            if (safeGroups.length > 0) nextGroups[workspaceId] = safeGroups;
+          }
+          const nextCollapsed = {};
+          for (const [workspaceId, value] of Object.entries(previous.collapsedWorkspaces ?? {})) {
+            if (memberSets.has(workspaceId)) nextCollapsed[workspaceId] = value;
+            else changed = true;
+          }
+          const nextManualOrders = {};
+          for (const [workspaceId, order] of Object.entries(previous.manualOrders ?? {})) {
+            const members = memberSets.get(workspaceId);
+            if (!members || !Array.isArray(order)) {
+              changed = true;
+              continue;
+            }
+            const kept = order.filter((id) => members.has(id));
+            if (kept.length !== order.length) changed = true;
+            if (kept.length > 0) nextManualOrders[workspaceId] = kept;
+          }
+          const nextTopOrders = {};
+          for (const [workspaceId, order] of Object.entries(previous.topOrders ?? {})) {
+            const members = memberSets.get(workspaceId);
+            if (!members || !Array.isArray(order)) {
+              changed = true;
+              continue;
+            }
+            const groupIds = new Set((nextGroups[workspaceId] ?? []).filter((group) => !group.parentGroupId).map((group) => group.id));
+            const kept = [];
+            for (const key of order) {
+              if (key.startsWith('g:') && groupIds.has(key.slice(2))) kept.push(key);
+              else if (key.startsWith('s:') && members.has(key.slice(2))) kept.push(key);
+              else changed = true;
+            }
+            if (kept.length > 0) nextTopOrders[workspaceId] = kept;
+          }
+          const parentMap = buildWorkspaceParentMap(workspaces);
+          const nextChildOrders = {};
+          for (const [parentId, order] of Object.entries(previous.childOrders ?? {})) {
+            if (!parentMap.has(parentId) || !Array.isArray(order)) {
+              changed = true;
+              continue;
+            }
+            const kept = order.filter((childId) => parentMap.get(childId) === parentId);
+            if (kept.length !== order.length) changed = true;
+            if (kept.length > 0) nextChildOrders[parentId] = kept;
+          }
+          const groupEntries = new Map();
+          for (const groups of Object.values(nextGroups)) {
+            for (const group of groups) groupEntries.set(group.id, { group, groups });
+          }
+          const nextGroupOrders = {};
+          for (const [groupId, order] of Object.entries(previous.groupOrders ?? {})) {
+            const entry = groupEntries.get(groupId);
+            if (!entry || !Array.isArray(order)) {
+              changed = true;
+              continue;
+            }
+            const validKeys = new Set([
+              ...entry.group.sessionIds.map((sessionId) => topKeyOfSession(sessionId)),
+              ...entry.groups
+                .filter((group) => group.parentGroupId === groupId)
+                .map((group) => topKeyOfGroup(group.id)),
+            ]);
+            const seen = new Set();
+            const kept = [];
+            for (const key of order) {
+              if (!validKeys.has(key) || seen.has(key)) {
+                changed = true;
+                continue;
+              }
+              seen.add(key);
+              kept.push(key);
+            }
+            if (kept.length > 0) nextGroupOrders[groupId] = kept;
+          }
+          if (!changed) return previous;
+          return {
+            groups: nextGroups,
+            collapsedWorkspaces: nextCollapsed,
+            manualOrders: nextManualOrders,
+            topOrders: nextTopOrders,
+            childOrders: nextChildOrders,
+            groupOrders: nextGroupOrders,
+            hideArchived: previous.hideArchived !== false,
+            workspaceTree: previous.workspaceTree === true,
+            flatList: previous.flatList === true,
+          };
+        });
+      }, [workspaces, phase, list]);
+
+      React.useEffect(() => {
+        const pending = pendingGroupSessionRef.current;
+        if (!pending) return;
+        const workspace = workspaces.find((item) => item.workspaceId === pending.workspaceId);
+        if (!workspace) return;
+        const sessionId = (workspace.sessionIds ?? []).find((id) => !pending.known.has(id));
+        const sessionRow = sessionId ? list.byId?.[sessionId] : undefined;
+        if (!sessionId || !sessionRow || sessionRow.blank !== true) return;
+        if ((sessionRow.retainedBy?.mainView ?? 0) <= 0) return;
+        pendingGroupSessionRef.current = null;
+        setPrefs((previous) => {
+          const groups = previous.groups?.[pending.workspaceId];
+          if (!Array.isArray(groups) || !groups.some((group) => group.id === pending.groupId)) {
+            return previous;
+          }
+          return insertIntoGroup(previous, pending.workspaceId, pending.groupId, sessionId, null, 'end');
+        });
+        notify(tr('notice.sessionCreated'));
+      }, [workspaces, list, notify, tr]);
+
+      const query = searchOpen ? searchText.trim().toLowerCase() : '';
+      const workspaceTitle = (workspace) => workspace.title || workspace.path || tr('untitled');
+      const titleOf = (sessionId) => {
+        const row = list.byId?.[sessionId];
+        if (!row) return tr('untitled');
+        if (row.blank) return tr('newSession');
+        const stored = typeof row.title === 'string' ? row.title.trim() : '';
+        const display = typeof row.displayTitle === 'string' ? row.displayTitle : '';
+        const candidate = stored || display;
+        if (!candidate || candidate === sessionId) return tr('untitled');
+        return candidate;
+      };
+      React.useEffect(() => {
+        const provider = () => {
+          const stored = loadPrefs();
+          const workspaceList = [];
+          for (const workspace of workspaces) {
+            const groups = Array.isArray(stored.groups[workspace.workspaceId])
+              ? stored.groups[workspace.workspaceId].map((group) => ({
+                  id: group.id,
+                  name: group.name,
+                  color: group.color,
+                  collapsed: group.collapsed === true,
+                  parentGroupId: group.parentGroupId ?? null,
+                  sessionIds: Array.isArray(group.sessionIds) ? group.sessionIds.slice() : [],
+                }))
+              : [];
+            const sessions = (Array.isArray(workspace.sessionIds) ? workspace.sessionIds : [])
+              .filter((sessionId) => !archivedSessionIds.has(sessionId))
+              .map((sessionId) => ({ id: sessionId, title: titleOf(sessionId) }));
+            const grouped = new Set(groups.flatMap((group) => group.sessionIds));
+            workspaceList.push({
+              id: workspace.workspaceId,
+              title: workspace.title || workspace.path || workspace.workspaceId,
+              path: workspace.path,
+              sessions,
+              groups,
+              ungroupedSessionIds: sessions
+                .filter((session) => !grouped.has(session.id))
+                .map((session) => session.id),
+            });
+          }
+          return { view: 'grouped', workspaces: workspaceList };
+        };
+        bridgeSnapshotProvider = provider;
+        return () => {
+          if (bridgeSnapshotProvider === provider) bridgeSnapshotProvider = null;
+        };
+      }, [archivedSessionIds, list, workspaces]);
+
+      const groupSessionIds = (workspaceId, groupId) => {
+        const groups = prefs.groups?.[workspaceId] ?? [];
+        const byId = new Map(groups.map((group) => [group.id, group]));
+        const ids = [];
+        const seen = new Set();
+        const walk = (id) => {
+          if (seen.has(id)) return;
+          seen.add(id);
+          const group = byId.get(id);
+          if (!group) return;
+          for (const sessionId of group.sessionIds ?? []) {
+            const key = `s:${sessionId}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            ids.push(sessionId);
+          }
+          for (const child of groups) {
+            if (child.parentGroupId === id) walk(child.id);
+          }
+        };
+        walk(groupId);
+        return ids;
+      };
+
+      const workspaceSessionIds = (workspaceId) => {
+        const ids = [];
+        const seen = new Set();
+        const collect = (id) => {
+          if (seen.has(id)) return;
+          seen.add(id);
+          const workspace = workspaces.find((item) => item.workspaceId === id);
+          for (const sessionId of workspace?.sessionIds ?? []) {
+            if (seen.has(`s:${sessionId}`)) continue;
+            seen.add(`s:${sessionId}`);
+            ids.push(sessionId);
+          }
+          for (const child of workspaces) {
+            if (workspaceParents.get(child.workspaceId) === id) collect(child.workspaceId);
+          }
+        };
+        collect(workspaceId);
+        return ids;
+      };
+
+      const dataTitle = (kind, target) => {
+        if (kind === 'session') return titleOf(target);
+        if (kind === 'group') {
+          const group = (prefs.groups?.[target.workspaceId] ?? []).find((item) => item.id === target.groupId);
+          return group?.name || tr('data.group');
+        }
+        const workspace = workspaces.find((item) => item.workspaceId === target);
+        return workspace ? workspaceTitle(workspace) : tr('data.workspace');
+      };
+
+      const openDataPanel = (kind, sessionIds, target) => {
+        closeMenu();
+        setDataPanel({
+          key: `${kind}:${target?.sessionId ?? target?.groupId ?? target ?? ''}`,
+          kind,
+          title: `${tr(kind === 'session' ? 'data.title.session' : kind === 'group' ? 'data.title.group' : 'data.title.workspace')} · 「${dataTitle(kind, target)}」`,
+          sessionIds: [...new Set(sessionIds.filter((id) => typeof id === 'string' && id.length > 0))],
+        });
+      };
+
+      const openDeleteDialog = (sessionId, workspaceId) => {
+        closeMenu();
+        const row = list.byId?.[sessionId];
+        setDeleteDialog({
+          sessionId,
+          workspaceId,
+          title: titleOf(sessionId),
+          knownRunning: row?.running === true,
+          knownSubagents: subagentCatalogOf(sessionId).length,
+          currentSessionId,
+        });
+      };
+
+      const sortScope = (previous, rootWorkspaceId, mode) => {
+        const byId = new Map(workspaces.map((workspace) => [workspace.workspaceId, workspace]));
+        const childrenByParent = new Map();
+        for (const workspace of workspaces) {
+          const parentId = workspaceParents.get(workspace.workspaceId);
+          if (parentId === undefined) continue;
+          const siblings = childrenByParent.get(parentId) ?? [];
+          siblings.push(workspace.workspaceId);
+          childrenByParent.set(parentId, siblings);
+        }
+        const updatedAtOf = (sessionId) => list.byId?.[sessionId]?.updatedAt ?? 0;
+        const latestCache = new Map();
+        const latestOfWorkspace = (workspaceId, seen = new Set()) => {
+          if (latestCache.has(workspaceId)) return latestCache.get(workspaceId);
+          if (seen.has(workspaceId)) return 0;
+          seen.add(workspaceId);
+          const workspace = byId.get(workspaceId);
+          let latest = 0;
+          for (const sessionId of workspace?.sessionIds ?? []) {
+            latest = Math.max(latest, updatedAtOf(sessionId));
+          }
+          for (const childId of childrenByParent.get(workspaceId) ?? []) {
+            latest = Math.max(latest, latestOfWorkspace(childId, seen));
+          }
+          seen.delete(workspaceId);
+          latestCache.set(workspaceId, latest);
+          return latest;
+        };
+        const compare = (left, right) => {
+          if (mode === 'initial') {
+            const primary = compareTextInitial(left.title, right.title);
+            if (primary !== 0) return primary;
+            if (left.time !== right.time) return right.time - left.time;
+          } else {
+            if (left.time !== right.time) return right.time - left.time;
+            const primary = compareTextInitial(left.title, right.title);
+            if (primary !== 0) return primary;
+          }
+          return String(left.id).localeCompare(String(right.id));
+        };
+        const nextGroups = { ...(previous.groups ?? {}) };
+        const nextTopOrders = { ...(previous.topOrders ?? {}) };
+        const nextChildOrders = { ...(previous.childOrders ?? {}) };
+        const nextGroupOrders = { ...(previous.groupOrders ?? {}) };
+        const visited = new Set();
+        const visit = (workspaceId) => {
+          if (visited.has(workspaceId)) return;
+          visited.add(workspaceId);
+          const workspace = byId.get(workspaceId);
+          if (!workspace) return;
+          const groups = Array.isArray(nextGroups[workspaceId])
+            ? nextGroups[workspaceId].map((group) => ({ ...group, sessionIds: [...group.sessionIds] }))
+            : [];
+          for (const group of groups) delete nextGroupOrders[group.id];
+          const groupById = new Map(groups.map((group) => [group.id, group]));
+          const groupChildren = new Map();
+          for (const group of groups) {
+            const parentId = group.parentGroupId && groupById.has(group.parentGroupId)
+              ? group.parentGroupId
+              : null;
+            const siblings = groupChildren.get(parentId) ?? [];
+            siblings.push(group);
+            groupChildren.set(parentId, siblings);
+          }
+          const groupLatestCache = new Map();
+          const latestOfGroup = (groupId, seen = new Set()) => {
+            if (groupLatestCache.has(groupId)) return groupLatestCache.get(groupId);
+            if (seen.has(groupId)) return 0;
+            seen.add(groupId);
+            const group = groupById.get(groupId);
+            let latest = 0;
+            for (const sessionId of group?.sessionIds ?? []) {
+              latest = Math.max(latest, updatedAtOf(sessionId));
+            }
+            for (const child of groupChildren.get(groupId) ?? []) {
+              latest = Math.max(latest, latestOfGroup(child.id, seen));
+            }
+            seen.delete(groupId);
+            groupLatestCache.set(groupId, latest);
+            return latest;
+          };
+          const groupedIds = new Set(groups.flatMap((group) => group.sessionIds));
+          const ungrouped = (workspace.sessionIds ?? []).filter((sessionId) => !groupedIds.has(sessionId));
+          const topItems = [
+            ...(groupChildren.get(null) ?? []).map((group) => ({
+              kind: 'group',
+              id: group.id,
+              title: group.name,
+              time: latestOfGroup(group.id),
+            })),
+            ...ungrouped.map((sessionId) => ({
+              kind: 'session',
+              id: sessionId,
+              title: titleOf(sessionId),
+              time: updatedAtOf(sessionId),
+            })),
+          ];
+          topItems.sort(compare);
+          const topKeys = topItems.map((item) => (
+            item.kind === 'group' ? topKeyOfGroup(item.id) : topKeyOfSession(item.id)
+          ));
+          if (topKeys.length > 0) nextTopOrders[workspaceId] = topKeys;
+          else delete nextTopOrders[workspaceId];
+          const sortedById = new Map(groups.map((group) => {
+            const members = group.sessionIds.map((sessionId) => ({
+              id: sessionId,
+              title: titleOf(sessionId),
+              time: updatedAtOf(sessionId),
+            }));
+            members.sort(compare);
+            return [group.id, { ...group, sessionIds: members.map((member) => member.id) }];
+          }));
+          const orderedGroups = [];
+          const appendGroupChildren = (parentId) => {
+            const siblings = (groupChildren.get(parentId) ?? [])
+              .map((group) => ({
+                group: sortedById.get(group.id),
+                title: group.name,
+                time: latestOfGroup(group.id),
+              }))
+              .sort(compare);
+            for (const sibling of siblings) {
+              orderedGroups.push(sibling.group);
+              appendGroupChildren(sibling.group.id);
+            }
+          };
+          appendGroupChildren(null);
+          if (orderedGroups.length > 0) nextGroups[workspaceId] = orderedGroups;
+          else delete nextGroups[workspaceId];
+          const children = (childrenByParent.get(workspaceId) ?? []).map((childId) => {
+            const child = byId.get(childId);
+            return {
+              id: childId,
+              title: child ? workspaceTitle(child) : childId,
+              time: latestOfWorkspace(childId),
+            };
+          });
+          children.sort(compare);
+          if (children.length > 0) nextChildOrders[workspaceId] = children.map((child) => child.id);
+          else delete nextChildOrders[workspaceId];
+          for (const child of children) visit(child.id);
+        };
+        if (rootWorkspaceId === null) {
+          for (const workspace of workspaces) {
+            if (workspaceParents.get(workspace.workspaceId) === undefined) visit(workspace.workspaceId);
+          }
+        } else {
+          visit(rootWorkspaceId);
+        }
+        return {
+          ...previous,
+          groups: nextGroups,
+          topOrders: nextTopOrders,
+          childOrders: nextChildOrders,
+          groupOrders: nextGroupOrders,
+        };
+      };
+
+      const subagentCatalogOf = (sessionId) => {
+        const catalog = list.projectionsBySession?.[sessionId]?.values?.subagentCatalog;
+        return Array.isArray(catalog)
+          ? catalog.filter((entry) => entry && typeof entry.id === 'string' && entry.id.length > 0)
+          : [];
+      };
+
+      const subagentLabelOf = (entry) => {
+        const stored = typeof entry?.label === 'string' ? entry.label.trim() : '';
+        if (stored) return stored;
+        const row = list.byId?.[entry?.id];
+        const candidate = row && (row.title || row.displayTitle);
+        if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+        return String(entry?.id ?? '');
+      };
+
+      const toggleSubagentSession = React.useCallback((sessionId) => {
+        setExpandedSubagentSessions((previous) => {
+          const next = new Set(previous);
+          if (next.has(sessionId)) next.delete(sessionId);
+          else next.add(sessionId);
+          return next;
+        });
+      }, []);
+
+      const openSubagentSession = (parentSessionId, entry) => {
+        if (!entry || entry.mode === 'external' || typeof openSession !== 'function') return;
+        const mode = entry.mode === 'one-shot' || entry.mode === 'continuable' || entry.mode === 'unknown'
+          ? entry.mode
+          : 'unknown';
+        openSession({
+          parentSessionId,
+          childSessionId: entry.id,
+          mode,
+        });
+      };
+
+      const isVisible = (sessionId) => {
+        const row = list.byId?.[sessionId];
+        if (!row) return false;
+        if (row.origin === 'subagent') return false;
+        if (row.blank && sessionId !== currentSessionId) return false;
+        if (archivedSessionIds.has(sessionId) && prefs.hideArchived !== false) return false;
+        return true;
+      };
+      const matches = (sessionId) => !query || titleOf(sessionId).toLowerCase().includes(query);
+      const orderByUpdated = (sessionIds) => {
+        return [...sessionIds].sort((left, right) => {
+          const leftPinned = pinnedSessionIds.has(left) ? 0 : 1;
+          const rightPinned = pinnedSessionIds.has(right) ? 0 : 1;
+          if (leftPinned !== rightPinned) return leftPinned - rightPinned;
+          const leftTime = list.byId?.[left]?.updatedAt ?? 0;
+          const rightTime = list.byId?.[right]?.updatedAt ?? 0;
+          return rightTime - leftTime;
+        });
+      };
+
+      const sections = [];
+      for (const workspace of workspaces) {
+        const memberIds = Array.isArray(workspace.sessionIds) ? workspace.sessionIds : [];
+        const workspaceMatches = Boolean(query) && workspaceTitle(workspace).toLowerCase().includes(query);
+        const storedGroups = Array.isArray(prefs.groups?.[workspace.workspaceId])
+          ? prefs.groups[workspace.workspaceId]
+          : [];
+        const storedById = new Map(storedGroups.map((group) => [group.id, group]));
+        const directMembers = new Map();
+        const childrenOfGroup = new Map();
+        const storedRoots = [];
+        for (const group of storedGroups) {
+          directMembers.set(group.id, group.sessionIds.filter((id) => isVisible(id) && memberIds.includes(id)));
+          const parentId = group.parentGroupId && storedById.has(group.parentGroupId)
+            ? group.parentGroupId
+            : undefined;
+          if (parentId === undefined) {
+            storedRoots.push(group);
+          } else {
+            const siblings = childrenOfGroup.get(parentId) ?? [];
+            siblings.push(group);
+            childrenOfGroup.set(parentId, siblings);
+          }
+        }
+        const buildGroup = (group) => {
+          const direct = directMembers.get(group.id) ?? [];
+          const childResults = (childrenOfGroup.get(group.id) ?? [])
+            .map((child) => buildGroup(child))
+            .filter((result) => result !== null);
+          const nameMatches = Boolean(query) && group.name.toLowerCase().includes(query);
+          const memberMatches = direct.some((id) => matches(id));
+          const childMatches = childResults.some((result) => result.matched);
+          const matched = !query || workspaceMatches || nameMatches || memberMatches || childMatches;
+          if (!matched) return null;
+          const includeAll = !query || workspaceMatches || nameMatches || memberMatches;
+          const members = includeAll ? direct : direct.filter((id) => matches(id));
+          const children = includeAll
+            ? childResults.map((result) => result.item)
+            : childResults.filter((result) => result.matched).map((result) => result.item);
+          const hasStoredParent = group.parentGroupId && storedById.has(group.parentGroupId);
+          if (members.length === 0 && children.length === 0 && !hasStoredParent) return null;
+          const allMembers = [...members, ...children.flatMap((child) => child.allMembers)];
+          const item = {
+            group,
+            members,
+            children,
+            allMembers,
+            totalMembers: allMembers.length,
+          };
+          return { item, matched };
+        };
+        const groups = storedRoots
+          .map((group) => buildGroup(group))
+          .filter((result) => result !== null)
+          .map((result) => result.item);
+        const groupedIds = new Set(storedGroups.flatMap((group) => group.sessionIds ?? []));
+        const visibleUngroupedIds = memberIds.filter((id) => !groupedIds.has(id) && isVisible(id));
+        const manualOrder = prefs.manualOrders?.[workspace.workspaceId];
+        let orderedUngrouped;
+        if (Array.isArray(manualOrder)) {
+          const visibleSet = new Set(visibleUngroupedIds);
+          const seen = new Set();
+          orderedUngrouped = [];
+          for (const id of manualOrder) {
+            if (!visibleSet.has(id) || seen.has(id)) continue;
+            seen.add(id);
+            orderedUngrouped.push(id);
+          }
+          orderedUngrouped.push(...orderByUpdated(visibleUngroupedIds.filter((id) => !seen.has(id))));
+        } else {
+          orderedUngrouped = orderByUpdated(visibleUngroupedIds);
+        }
+        orderedUngrouped = pinnedFirst(orderedUngrouped, pinnedSessionIds);
+        const selectedBlankId = currentSessionId && list.byId?.[currentSessionId]?.blank
+          ? currentSessionId
+          : null;
+        if (selectedBlankId) {
+          const blankIndex = orderedUngrouped.indexOf(selectedBlankId);
+          if (blankIndex > 0) {
+            orderedUngrouped = [selectedBlankId, ...orderedUngrouped.filter((id) => id !== selectedBlankId)];
+          }
+        }
+        const ungrouped = orderedUngrouped.filter((id) => workspaceMatches || matches(id));
+        if (query && !workspaceMatches && groups.length === 0 && ungrouped.length === 0) continue;
+        const referenceIds = pinnedFirst(
+          orderByUpdated(memberIds.filter((id) => isVisible(id))),
+          pinnedSessionIds,
+        );
+        const referenceIndex = new Map(referenceIds.map((id, index) => [id, index]));
+        const defaultTopItems = [
+          ...groups.map((item) => {
+            const indexes = item.allMembers
+              .map((id) => referenceIndex.get(id))
+              .filter((index) => index !== undefined);
+            return {
+              kind: 'group',
+              key: topKeyOfGroup(item.group.id),
+              node: item,
+              sortIndex: indexes.length > 0 ? Math.min(...indexes) : Number.MAX_SAFE_INTEGER,
+            };
+          }),
+          ...ungrouped.map((id) => ({
+            kind: 'session',
+            key: topKeyOfSession(id),
+            id,
+            sortIndex: referenceIndex.get(id) ?? Number.MAX_SAFE_INTEGER,
+          })),
+        ].sort((left, right) => left.sortIndex - right.sortIndex)
+          .map(({ sortIndex, ...item }) => item);
+        const savedTopOrder = prefs.topOrders?.[workspace.workspaceId];
+        let topItems = defaultTopItems;
+        if (Array.isArray(savedTopOrder)) {
+          const byKey = new Map(defaultTopItems.map((item) => [item.key, item]));
+          const seen = new Set();
+          topItems = [];
+          for (const key of savedTopOrder) {
+            const item = byKey.get(key);
+            if (!item || seen.has(key)) continue;
+            seen.add(key);
+            topItems.push(item);
+          }
+          for (const item of defaultTopItems) {
+            if (!seen.has(item.key)) topItems.push(item);
+          }
+        }
+        sections.push({
+          key: workspace.workspaceId,
+          workspace,
+          groups,
+          ungrouped,
+          ungroupedAll: orderedUngrouped,
+          topItems,
+          collapsed: !query && prefs.collapsedWorkspaces?.[workspace.workspaceId] === true,
+        });
+      }
+
+      const accounted = new Set(workspaces.flatMap((workspace) => workspace.sessionIds ?? []));
+      const strayIds = (list.ids ?? []).filter((id) => !accounted.has(id) && isVisible(id));
+      const storedUngroupedOrder = prefs.manualOrders?.[UNGROUPED_KEY];
+      let orderedUngrouped;
+      if (Array.isArray(storedUngroupedOrder)) {
+        const visibleSet = new Set(strayIds);
+        const seen = new Set();
+        orderedUngrouped = [];
+        for (const id of storedUngroupedOrder) {
+          if (!visibleSet.has(id) || seen.has(id)) continue;
+          seen.add(id);
+          orderedUngrouped.push(id);
+        }
+        orderedUngrouped.push(...orderByUpdated(strayIds.filter((id) => !seen.has(id))));
+      } else {
+        orderedUngrouped = orderByUpdated(strayIds);
+      }
+      orderedUngrouped = pinnedFirst(orderedUngrouped, pinnedSessionIds);
+      const selectedUngroupedBlankId = currentSessionId && list.byId?.[currentSessionId]?.blank
+        ? currentSessionId
+        : null;
+      if (selectedUngroupedBlankId) {
+        const blankIndex = orderedUngrouped.indexOf(selectedUngroupedBlankId);
+        if (blankIndex > 0) {
+          orderedUngrouped = [selectedUngroupedBlankId, ...orderedUngrouped.filter((id) => id !== selectedUngroupedBlankId)];
+        }
+      }
+      const ungroupedSessionIds = orderedUngrouped.filter((id) => matches(id));
+      if (ungroupedSessionIds.length > 0) {
+        sections.push({
+          key: UNGROUPED_KEY,
+          ungroupedOnly: true,
+          groups: [],
+          ungrouped: ungroupedSessionIds,
+          ungroupedAll: orderedUngrouped,
+          collapsed: !query && prefs.collapsedWorkspaces?.[UNGROUPED_KEY] === true,
+        });
+      }
+
+      const hasAnyGroup = Object.values(prefs.groups ?? {}).some((groups) => Array.isArray(groups) && groups.length > 0);
+      const visibleCount = sections.reduce(
+        (total, section) => total + section.ungrouped.length
+          + section.groups.reduce((sum, item) => sum + item.totalMembers, 0),
+        0,
+      );
+
+      const flatListMode = prefs.flatList === true;
+      const workspaceTreeMode = !flatListMode && prefs.workspaceTree === true;
+      const treeLayout = (() => {
+        const sectionById = new Map();
+        for (const section of sections) {
+          if (section.workspace) sectionById.set(section.workspace.workspaceId, section);
+        }
+        const childrenByParent = new Map();
+        const roots = [];
+        for (const section of sections) {
+          if (!section.workspace || !workspaceTreeMode) {
+            roots.push(section);
+            continue;
+          }
+          const workspaceId = section.workspace.workspaceId;
+          let parentId = workspaceParents.get(workspaceId);
+          const visited = new Set();
+          while (parentId !== undefined && !sectionById.has(parentId) && !visited.has(parentId)) {
+            visited.add(parentId);
+            parentId = workspaceParents.get(parentId);
+          }
+          if (parentId !== undefined && parentId !== workspaceId) {
+            const siblings = childrenByParent.get(parentId);
+            if (siblings === undefined) childrenByParent.set(parentId, [section]);
+            else siblings.push(section);
+          } else {
+            roots.push(section);
+          }
+        }
+        return { roots, childrenByParent };
+      })();
+
+      const collectWorkspaceSessionIds = (workspace) => {
+        const ids = new Set(workspace.sessionIds ?? []);
+        const childSections = treeLayout.childrenByParent.get(workspace.workspaceId) ?? [];
+        for (const child of childSections) {
+          for (const sessionId of collectWorkspaceSessionIds(child.workspace)) ids.add(sessionId);
+        }
+        return [...ids];
+      };
+
+      const canShowHoverCard = () => {
+        if (typeof window === 'undefined') return false;
+        try {
+          if (typeof window.matchMedia === 'function'
+            && window.matchMedia('(hover: hover)').matches === false) return false;
+        } catch {
+          /* older environments: keep the card available */
+        }
+        return true;
+      };
+
+      const clearHoverTimers = () => {
+        if (hoverOpenTimerRef.current !== null) {
+          window.clearTimeout(hoverOpenTimerRef.current);
+          hoverOpenTimerRef.current = null;
+        }
+        if (hoverCloseTimerRef.current !== null) {
+          window.clearTimeout(hoverCloseTimerRef.current);
+          hoverCloseTimerRef.current = null;
+        }
+      };
+
+      const dismissHoverCard = React.useCallback(() => {
+        clearHoverTimers();
+        hoverShownRef.current = false;
+        setHoverCard(null);
+      }, []);
+
+      React.useEffect(() => () => {
+        clearHoverTimers();
+      }, []);
+
+      React.useEffect(() => {
+        if (!hoverCard) return undefined;
+        const close = () => dismissHoverCard();
+        const scroller = rootRef.current?.querySelector?.('.dsg-scroll');
+        if (scroller) scroller.addEventListener('scroll', close, { passive: true });
+        window.addEventListener('resize', close);
+        return () => {
+          if (scroller) scroller.removeEventListener('scroll', close);
+          window.removeEventListener('resize', close);
+        };
+      }, [hoverCard, dismissHoverCard]);
+
+      React.useEffect(() => {
+        const onFollowup = (event) => {
+          const detail = event?.detail ?? {};
+          if (detail.kind === 'failed') {
+            notify(tr('notice.archiveFollowupFailed', { reason: detail.text || tr('notice.archiveFailedUnknown') }));
+          } else if (detail.kind === 'settled') {
+            notify(tr('notice.archiveFollowupSettled'), true);
+          }
+        };
+        window.addEventListener(ARCHIVE_EVENT, onFollowup);
+        return () => window.removeEventListener(ARCHIVE_EVENT, onFollowup);
+      }, []);
+
+      const scheduleHoverCard = (event, sessionId) => {
+        if (!canShowHoverCard() || dragRef.current || menu) return;
+        const target = event?.currentTarget;
+        if (!target || typeof target.getBoundingClientRect !== 'function') return;
+        const rect = target.getBoundingClientRect();
+        clearHoverTimers();
+        if (hoverCard?.sessionId === sessionId) return;
+        const delay = hoverShownRef.current ? 0 : 800;
+        hoverOpenTimerRef.current = window.setTimeout(() => {
+          hoverOpenTimerRef.current = null;
+          hoverShownRef.current = true;
+          setHoverCard({
+            sessionId,
+            rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+          });
+        }, delay);
+      };
+
+      const scheduleHoverClose = () => {
+        if (hoverOpenTimerRef.current !== null) {
+          window.clearTimeout(hoverOpenTimerRef.current);
+          hoverOpenTimerRef.current = null;
+        }
+        if (hoverCloseTimerRef.current !== null) {
+          window.clearTimeout(hoverCloseTimerRef.current);
+        }
+        hoverCloseTimerRef.current = window.setTimeout(() => {
+          hoverCloseTimerRef.current = null;
+          hoverShownRef.current = false;
+          setHoverCard(null);
+        }, 120);
+      };
+
+      const enterHoverCard = () => {
+        if (hoverCloseTimerRef.current !== null) {
+          window.clearTimeout(hoverCloseTimerRef.current);
+          hoverCloseTimerRef.current = null;
+        }
+      };
+
+      const closeMenu = React.useCallback(() => {
+        dismissHoverCard();
+        setMenu(null);
+        setColorEditor(null);
+      }, [dismissHoverCard]);
+
+      const clearDrag = React.useCallback(() => {
+        dragRef.current = null;
+        setDragInfo(null);
+        setDropHint(null);
+      }, []);
+
+      const handleDragStart = (event, sessionId, workspaceId, groupId) => {
+        dismissHoverCard();
+        if (!workspaceId) {
+          event.preventDefault();
+          return;
+        }
+        if (event.target && typeof event.target.closest === 'function' && event.target.closest('button,input')) {
+          event.preventDefault();
+          return;
+        }
+        const info = { kind: 'session', sessionId, workspaceId, groupId: groupId ?? null };
+        dragRef.current = info;
+        setDragInfo(info);
+        setDropHint(null);
+        try {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', sessionId);
+          event.dataTransfer.setData('application/x-dsh-session-group', JSON.stringify(info));
+        } catch {
+          /* dataTransfer may be unavailable in synthetic drags */
+        }
+      };
+
+      const handleDragEnd = () => clearDrag();
+
+      const rowDropZone = (event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const ratio = (event.clientY - rect.top) / Math.max(1, rect.height);
+        if (ratio < 0.3) return 'before';
+        if (ratio > 0.7) return 'after';
+        return 'group';
+      };
+
+      const reorderUngrouped = (workspaceId, sourceId, targetSessionId, position) => {
+        const section = sections.find((candidate) => candidate.workspace?.workspaceId === workspaceId);
+        const baseOrder = Array.isArray(section?.ungroupedAll) ? section.ungroupedAll : [];
+        const allIds = baseOrder.includes(sourceId) ? baseOrder : [...baseOrder, sourceId];
+        let order = Array.isArray(prefs.manualOrders?.[workspaceId])
+          ? prefs.manualOrders[workspaceId].filter((id) => allIds.includes(id))
+          : [...baseOrder];
+        for (const id of allIds) {
+          if (!order.includes(id)) order.push(id);
+        }
+        order = order.filter((id) => id !== sourceId);
+        let index = order.indexOf(targetSessionId);
+        if (index === -1) index = order.length;
+        else if (position === 'after') index += 1;
+        order.splice(index, 0, sourceId);
+        setPrefs((previous) => setManualOrder(
+          removeSessionFromGroups(previous, workspaceId, sourceId),
+          workspaceId,
+          order,
+        ));
+        const sourceIndex = order.indexOf(sourceId);
+        const beforeId = sourceIndex >= 0 ? order[sourceIndex + 1] : undefined;
+        try {
+          const pending = insertSessionBefore?.(workspaceId, sourceId, beforeId);
+          if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+        } catch {
+          /* the browser-local order still stands; Host order is a durability bonus */
+        }
+        notify(tr('notice.reordered'));
+      };
+
+      const moveTopItem = (workspaceId, sourceKey, targetKey, position) => {
+        const section = sections.find((candidate) => candidate.workspace?.workspaceId === workspaceId);
+        if (!section) return;
+        const keys = (section.topItems ?? []).map((item) => item.key);
+        const next = keys.filter((key) => key !== sourceKey);
+        let index = targetKey === undefined ? next.length : next.indexOf(targetKey);
+        if (index === -1) index = next.length;
+        else if (position === 'after') index += 1;
+        next.splice(index, 0, sourceKey);
+        setPrefs((previous) => setTopOrder(previous, workspaceId, next));
+        notify(tr('notice.reordered'));
+      };
+
+      const setGroupParent = (previous, workspaceId, groupId, parentId) => {
+        const groups = previous.groups?.[workspaceId] ?? [];
+        const source = groups.find((group) => group.id === groupId);
+        if (!source) return previous;
+        const oldParent = source.parentGroupId ?? null;
+        const nextParent = parentId ?? null;
+        if (oldParent === nextParent) return previous;
+        let next = updateGroups(
+          previous,
+          workspaceId,
+          groups.map((group) => (
+            group.id === groupId ? { ...group, parentGroupId: nextParent } : group
+          )),
+        );
+        if (oldParent !== null) {
+          const parentOrder = next.groupOrders?.[oldParent];
+          if (Array.isArray(parentOrder)) {
+            next = setGroupOrder(
+              next,
+              oldParent,
+              parentOrder.filter((key) => key !== topKeyOfGroup(groupId)),
+            );
+          }
+        }
+        let order = [...(next.topOrders?.[workspaceId] ?? [])];
+        if (oldParent === null && nextParent !== null) {
+          order = order.filter((key) => key !== topKeyOfGroup(groupId));
+        } else if (oldParent !== null && nextParent === null && !order.includes(topKeyOfGroup(groupId))) {
+          order.push(topKeyOfGroup(groupId));
+        }
+        next = setTopOrder(next, workspaceId, order);
+        return next;
+      };
+
+      const moveGroupToRootAt = (previous, workspaceId, groupId, targetKey, position) => {
+        const groups = previous.groups?.[workspaceId] ?? [];
+        const source = groups.find((group) => group.id === groupId);
+        if (!source) return previous;
+        let next = source.parentGroupId
+          ? setGroupParent(previous, workspaceId, groupId, null)
+          : previous;
+        const section = sections.find((candidate) => candidate.workspace?.workspaceId === workspaceId);
+        const fallbackOrder = (section?.topItems ?? []).map((item) => item.key);
+        let order = [...(next.topOrders?.[workspaceId] ?? fallbackOrder)];
+        const key = topKeyOfGroup(groupId);
+        order = order.filter((item) => item !== key);
+        let index = targetKey === undefined ? order.length : order.indexOf(targetKey);
+        if (index === -1) index = order.length;
+        else if (position === 'after') index += 1;
+        order.splice(index, 0, key);
+        return setTopOrder(next, workspaceId, order);
+      };
+
+      const nestGroup = (previous, workspaceId, groupId, targetGroupId) => {
+        const groups = previous.groups?.[workspaceId] ?? [];
+        const source = groups.find((group) => group.id === groupId);
+        if (!source) return previous;
+        const sameParent = (source.parentGroupId ?? null) === targetGroupId;
+        if (!sameParent && !canPlaceGroupUnder(groups, groupId, targetGroupId)) return previous;
+        let next = setGroupParent(previous, workspaceId, groupId, targetGroupId);
+        const current = next.groups?.[workspaceId] ?? [];
+        const moved = current.find((group) => group.id === groupId);
+        if (!moved) return next;
+        const without = current.filter((group) => group.id !== groupId);
+        const targetIndex = without.findIndex((group) => group.id === targetGroupId);
+        without.splice(targetIndex === -1 ? without.length : targetIndex + 1, 0, moved);
+        next = updateGroups(next, workspaceId, without);
+        const target = without.find((group) => group.id === targetGroupId);
+        if (target) {
+          const childIds = without.filter((group) => group.parentGroupId === targetGroupId).map((group) => group.id);
+          const order = resolveGroupOrder(next, targetGroupId, target.sessionIds, childIds)
+            .filter((key) => key !== topKeyOfGroup(groupId));
+          order.push(topKeyOfGroup(groupId));
+          next = setGroupOrder(next, targetGroupId, order);
+        }
+        return next;
+      };
+
+      const reorderSiblingGroup = (previous, workspaceId, groupId, targetGroupId, position) => {
+        const groups = previous.groups?.[workspaceId] ?? [];
+        const source = groups.find((group) => group.id === groupId);
+        const target = groups.find((group) => group.id === targetGroupId);
+        if (!source || !target) return previous;
+        const sourceParent = source.parentGroupId ?? null;
+        const targetParent = target.parentGroupId ?? null;
+        if (sourceParent !== targetParent) return previous;
+        if (sourceParent === null) {
+          const section = sections.find((candidate) => candidate.workspace?.workspaceId === workspaceId);
+          const fallbackOrder = (section?.topItems ?? []).map((item) => item.key);
+          let order = [...(previous.topOrders?.[workspaceId] ?? fallbackOrder)];
+          const key = topKeyOfGroup(groupId);
+          order = order.filter((item) => item !== key);
+          let index = order.indexOf(topKeyOfGroup(targetGroupId));
+          if (index === -1) index = order.length;
+          else if (position === 'after') index += 1;
+          order.splice(index, 0, key);
+          return setTopOrder(previous, workspaceId, order);
+        }
+        const parent = groups.find((group) => group.id === sourceParent);
+        const childIds = groups.filter((group) => group.parentGroupId === sourceParent).map((group) => group.id);
+        const order = resolveGroupOrder(previous, sourceParent, parent?.sessionIds ?? [], childIds)
+          .filter((key) => key !== topKeyOfGroup(groupId));
+        let index = order.indexOf(topKeyOfGroup(targetGroupId));
+        if (index === -1) index = order.length;
+        else if (position === 'after') index += 1;
+        order.splice(index, 0, topKeyOfGroup(groupId));
+        return setGroupOrder(previous, sourceParent, order);
+      };
+
+      const insertGroupIntoGroupAt = (
+        previous,
+        workspaceId,
+        groupId,
+        targetGroupId,
+        anchorSessionId,
+        position,
+      ) => {
+        const groups = previous.groups?.[workspaceId] ?? [];
+        const source = groups.find((group) => group.id === groupId);
+        if (!source) return previous;
+        const sameParent = (source.parentGroupId ?? null) === targetGroupId;
+        if (!sameParent && !canPlaceGroupUnder(groups, groupId, targetGroupId)) return previous;
+        let next = setGroupParent(previous, workspaceId, groupId, targetGroupId);
+        const currentGroups = next.groups?.[workspaceId] ?? [];
+        const target = currentGroups.find((group) => group.id === targetGroupId);
+        if (!target) return previous;
+        const childIds = currentGroups
+          .filter((group) => group.parentGroupId === targetGroupId)
+          .map((group) => group.id);
+        const order = resolveGroupOrder(next, targetGroupId, target.sessionIds, childIds)
+          .filter((key) => key !== topKeyOfGroup(groupId));
+        let index = order.indexOf(topKeyOfSession(anchorSessionId));
+        if (index === -1) index = order.length;
+        else if (position === 'after') index += 1;
+        order.splice(index, 0, topKeyOfGroup(groupId));
+        return setGroupOrder(next, targetGroupId, order);
+      };
+
+      const canPlaceGroupUnder = (groups, groupId, parentId) => {
+        if (!parentId) return true;
+        if (parentId === groupId || groupIsDescendant(groups, parentId, groupId)) return false;
+        return groupDepth(groups, parentId) + groupHeight(groups, groupId) <= 3;
+      };
+
+      const exceedsGroupDepth = (groups, groupId, parentId) => (
+        Boolean(parentId)
+        && groupDepth(groups, parentId) + groupHeight(groups, groupId) > 3
+      );
+
+      const insertGroupAsSibling = (previous, workspaceId, groupId, targetGroupId, position) => {
+        const groups = previous.groups?.[workspaceId] ?? [];
+        const target = groups.find((group) => group.id === targetGroupId);
+        if (!target) return previous;
+        const desiredParent = target.parentGroupId ?? null;
+        if (!canPlaceGroupUnder(groups, groupId, desiredParent)) return previous;
+        if (desiredParent === null) {
+          return moveGroupToRootAt(
+            previous,
+            workspaceId,
+            groupId,
+            topKeyOfGroup(targetGroupId),
+            position,
+          );
+        }
+        let next = setGroupParent(previous, workspaceId, groupId, desiredParent);
+        const currentGroups = next.groups?.[workspaceId] ?? [];
+        const parent = currentGroups.find((group) => group.id === desiredParent);
+        if (!parent) return previous;
+        const childIds = currentGroups
+          .filter((group) => group.parentGroupId === desiredParent)
+          .map((group) => group.id);
+        const order = resolveGroupOrder(next, desiredParent, parent.sessionIds, childIds)
+          .filter((key) => key !== topKeyOfGroup(groupId));
+        let index = order.indexOf(topKeyOfGroup(targetGroupId));
+        if (index === -1) index = order.length;
+        else if (position === 'after') index += 1;
+        order.splice(index, 0, topKeyOfGroup(groupId));
+        return setGroupOrder(next, desiredParent, order);
+      };
+
+      const groupDropZone = (event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const ratio = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.5;
+        if (ratio < 0.3) return 'before';
+        if (ratio > 0.7) return 'after';
+        return 'inside';
+      };
+
+      const handleGroupDragStart = (event, workspaceId, groupId) => {
+        if (event.target && typeof event.target.closest === 'function' && event.target.closest('button,input')) {
+          event.preventDefault();
+          return;
+        }
+        const info = {
+          kind: 'group',
+          workspaceId,
+          groupId,
+          key: topKeyOfGroup(groupId),
+        };
+        dragRef.current = info;
+        setDragInfo(info);
+        setDropHint(null);
+        try {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', info.key);
+          event.dataTransfer.setData('application/x-dsh-session-group-item', JSON.stringify(info));
+        } catch {
+          /* ignore */
+        }
+      };
+
+      const handleRowDragOver = (event, workspaceId, groupId, targetSessionId) => {
+        const drag = dragRef.current;
+        if (!drag || drag.workspaceId !== workspaceId || drag.sessionId === targetSessionId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+          event.dataTransfer.dropEffect = 'move';
+        } catch {
+          /* ignore */
+        }
+        const zone = rowDropZone(event);
+        if (drag.kind === 'group') {
+          if (groupId) {
+            const groups = prefs.groups?.[workspaceId] ?? [];
+            const source = groups.find((group) => group.id === drag.groupId);
+            if (!source) return;
+            const sameParent = (source.parentGroupId ?? null) === groupId;
+            if (!sameParent && !canPlaceGroupUnder(groups, drag.groupId, groupId)) return;
+            setDropHint({
+              kind: 'row',
+              id: targetSessionId,
+              position: zone === 'after' ? 'after' : 'before',
+            });
+            return;
+          }
+          setDropHint({
+            kind: 'top',
+            key: topKeyOfSession(targetSessionId),
+            workspaceId,
+            position: zone === 'after' ? 'after' : 'before',
+          });
+          return;
+        }
+        if (groupId) {
+          const groups = prefs.groups?.[workspaceId] ?? [];
+          if (zone === 'group' && drag.groupId === groupId && groupDepth(groups, groupId) < 3) {
+            setDropHint({ kind: 'rowGroup', id: targetSessionId });
+          } else {
+            setDropHint({
+              kind: 'row',
+              id: targetSessionId,
+              position: zone === 'after' ? 'after' : 'before',
+            });
+          }
+        } else if (zone === 'group') {
+          setDropHint({ kind: 'rowGroup', id: targetSessionId });
+        } else {
+          setDropHint({ kind: 'row', id: targetSessionId, position: zone });
+        }
+      };
+
+      const handleRowDrop = (event, workspaceId, groupId, targetSessionId) => {
+        const drag = dragRef.current;
+        if (!drag || drag.workspaceId !== workspaceId || drag.sessionId === targetSessionId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const zone = rowDropZone(event);
+        if (drag.kind === 'group') {
+          if (groupId) {
+            const groups = prefs.groups?.[workspaceId] ?? [];
+            const source = groups.find((group) => group.id === drag.groupId);
+            const sameParent = source ? (source.parentGroupId ?? null) === groupId : false;
+            if (!sameParent && !canPlaceGroupUnder(groups, drag.groupId, groupId)) {
+              if (exceedsGroupDepth(groups, drag.groupId, groupId)) {
+                notify(tr('notice.groupDepthLimit'), true);
+              }
+              clearDrag();
+              return;
+            }
+            clearDrag();
+            setPrefs((previous) => insertGroupIntoGroupAt(
+              previous,
+              workspaceId,
+              drag.groupId,
+              groupId,
+              targetSessionId,
+              zone === 'after' ? 'after' : 'before',
+            ));
+            notify(tr('notice.reordered'));
+            return;
+          }
+          clearDrag();
+          setPrefs((previous) => moveGroupToRootAt(
+            previous,
+            workspaceId,
+            drag.groupId,
+            topKeyOfSession(targetSessionId),
+            zone === 'after' ? 'after' : 'before',
+          ));
+          notify(tr('notice.reordered'));
+          return;
+        }
+        const sourceId = drag.sessionId;
+        const sourceGroupId = drag.groupId;
+        clearDrag();
+        if (groupId) {
+          const groups = prefs.groups?.[workspaceId] ?? [];
+          if (zone === 'group' && sourceGroupId === groupId && groupDepth(groups, groupId) < 3) {
+            setPrefs((previous) => createSubgroup(
+              previous,
+              workspaceId,
+              groupId,
+              [targetSessionId, sourceId],
+              (index) => tr('group.defaultName', { n: index + 1 }),
+            ));
+            notify(tr('notice.grouped'));
+            return;
+          }
+          const position = zone === 'after' ? 'after' : 'before';
+          setPrefs((previous) => {
+            const removed = removeSessionFromGroups(previous, workspaceId, sourceId);
+            return insertIntoGroup(removed, workspaceId, groupId, sourceId, targetSessionId, position);
+          });
+          notify(tr(sourceGroupId === groupId ? 'notice.reordered' : 'notice.grouped'));
+          return;
+        }
+        if (zone === 'group') {
+          const section = sections.find((candidate) => candidate.workspace?.workspaceId === workspaceId);
+          const topItems = query ? null : section?.topItems;
+          setPrefs((previous) => {
+            const removed = removeSessionFromGroups(previous, workspaceId, sourceId);
+            const members = [targetSessionId, sourceId];
+            return createGroupAt(
+              removed,
+              workspaceId,
+              members,
+              (index) => tr('group.defaultName', { n: index + 1 }),
+              targetSessionId,
+              topItems,
+            );
+          });
+          notify(tr('notice.grouped'));
+          return;
+        }
+        reorderUngrouped(workspaceId, sourceId, targetSessionId, zone);
+      };
+
+      const groupHeaderHalf = (event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        return event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+      };
+
+      const handleGroupDragOver = (event, workspaceId, groupId) => {
+        const drag = dragRef.current;
+        if (!drag || drag.workspaceId !== workspaceId || drag.groupId === groupId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+          event.dataTransfer.dropEffect = 'move';
+        } catch {
+          /* ignore */
+        }
+        if (drag.kind === 'group') {
+          const groups = prefs.groups?.[workspaceId] ?? [];
+          const source = groups.find((group) => group.id === drag.groupId);
+          const target = groups.find((group) => group.id === groupId);
+          if (!source || !target) return;
+          const zone = groupDropZone(event);
+          if (zone === 'inside') {
+            if (canNestGroup(groups, source.id, target.id)) {
+              setDropHint({ kind: 'nestGroup', id: target.id, workspaceId });
+            } else {
+              setDropHint(null);
+            }
+            return;
+          }
+          const desiredParent = target.parentGroupId ?? null;
+          if (!canPlaceGroupUnder(groups, source.id, desiredParent)) {
+            setDropHint(null);
+            return;
+          }
+          if (desiredParent === null) {
+            setDropHint({
+              kind: 'topGroup',
+              key: topKeyOfGroup(target.id),
+              workspaceId,
+              position: zone === 'before' ? 'before' : 'after',
+            });
+          } else {
+            setDropHint({
+              kind: 'groupEdge',
+              id: target.id,
+              workspaceId,
+              position: zone === 'before' ? 'before' : 'after',
+            });
+          }
+          return;
+        }
+        setDropHint({ kind: 'group', id: groupId });
+      };
+
+      const handleGroupDrop = (event, workspaceId, groupId) => {
+        const drag = dragRef.current;
+        if (!drag || drag.workspaceId !== workspaceId || drag.groupId === groupId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (drag.kind === 'group') {
+          const groups = prefs.groups?.[workspaceId] ?? [];
+          const source = groups.find((group) => group.id === drag.groupId);
+          const target = groups.find((group) => group.id === groupId);
+          if (!source || !target) return;
+          const zone = groupDropZone(event);
+          if (zone === 'inside') {
+            if (canNestGroup(groups, source.id, target.id)) {
+              setPrefs((previous) => nestGroup(previous, workspaceId, source.id, target.id));
+              notify(tr('group.moved'));
+            } else if (exceedsGroupDepth(groups, source.id, target.id)) {
+              notify(tr('notice.groupDepthLimit'), true);
+            }
+            clearDrag();
+            return;
+          }
+          const desiredParent = target.parentGroupId ?? null;
+          if (!canPlaceGroupUnder(groups, source.id, desiredParent)) {
+            if (exceedsGroupDepth(groups, source.id, desiredParent)) {
+              notify(tr('notice.groupDepthLimit'), true);
+            }
+            clearDrag();
+            return;
+          }
+          const sourceParent = source.parentGroupId ?? null;
+          clearDrag();
+          setPrefs((previous) => insertGroupAsSibling(
+            previous,
+            workspaceId,
+            source.id,
+            target.id,
+            zone === 'after' ? 'after' : 'before',
+          ));
+          notify(tr(sourceParent === desiredParent ? 'notice.reordered' : 'group.moved'));
+          return;
+        }
+        const sourceId = drag.sessionId;
+        clearDrag();
+        setPrefs((previous) => {
+          const removed = removeSessionFromGroups(previous, workspaceId, sourceId);
+          return insertIntoGroup(removed, workspaceId, groupId, sourceId, null, 'end');
+        });
+        notify(tr('notice.grouped'));
+      };
+
+      const handleUngroupedDragOver = (event, workspaceId) => {
+        const drag = dragRef.current;
+        if (!drag || drag.workspaceId !== workspaceId) return;
+        if (drag.kind === 'group') {
+          event.preventDefault();
+          event.stopPropagation();
+          setDropHint({ kind: 'topEnd', workspaceId });
+          return;
+        }
+        if (!drag.groupId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setDropHint({ kind: 'ungrouped', workspaceId });
+      };
+
+      const handleUngroupedDrop = (event, workspaceId) => {
+        const drag = dragRef.current;
+        if (!drag || drag.workspaceId !== workspaceId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (drag.kind === 'group') {
+          clearDrag();
+          setPrefs((previous) => moveGroupToRootAt(
+            previous,
+            workspaceId,
+            drag.groupId,
+            undefined,
+            'end',
+          ));
+          notify(tr('group.moved'));
+          return;
+        }
+        const sourceId = drag.sessionId;
+        const sourceGroupId = drag.groupId;
+        clearDrag();
+        if (!sourceGroupId) return;
+        setPrefs((previous) => removeSessionFromGroups(previous, workspaceId, sourceId));
+        notify(tr('notice.ungrouped'));
+      };
+
+      const handleWorkspaceDragOver = (event, workspaceId) => {
+        const drag = dragRef.current;
+        if (!drag || drag.workspaceId !== workspaceId) return;
+        if (drag.kind === 'group') {
+          event.preventDefault();
+          event.stopPropagation();
+          setDropHint({ kind: 'topEnd', workspaceId });
+          return;
+        }
+        if (!drag.groupId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setDropHint({ kind: 'ungrouped', workspaceId });
+      };
+
+      const handleWorkspaceDrop = (event, workspaceId) => {
+        handleUngroupedDrop(event, workspaceId);
+      };
+
+      const handleWorkspaceBodyDragOver = (event, workspaceId) => {
+        handleUngroupedDragOver(event, workspaceId);
+      };
+
+      const handleWorkspaceBodyDrop = (event, workspaceId) => {
+        handleUngroupedDrop(event, workspaceId);
+      };
+
+      const ungroupedOrderForDrag = () => {
+        const section = sections.find((candidate) => candidate.key === UNGROUPED_KEY);
+        const base = Array.isArray(section?.ungroupedAll) ? section.ungroupedAll : [];
+        const stored = prefs.manualOrders?.[UNGROUPED_KEY];
+        const order = Array.isArray(stored)
+          ? stored.filter((id) => base.includes(id))
+          : [...base];
+        for (const id of base) {
+          if (!order.includes(id)) order.push(id);
+        }
+        return order;
+      };
+
+      const commitUngroupedReorder = (sourceId, targetId, position) => {
+        let order = ungroupedOrderForDrag().filter((id) => id !== sourceId);
+        if (targetId === undefined || targetId === null) {
+          order.push(sourceId);
+        } else {
+          let index = order.indexOf(targetId);
+          if (index === -1) index = order.length;
+          else if (position === 'after') index += 1;
+          order.splice(index, 0, sourceId);
+        }
+        clearDrag();
+        setPrefs((previous) => setManualOrder(previous, UNGROUPED_KEY, order));
+        notify(tr('notice.reordered'));
+      };
+
+      const handleUngroupedSessionDragStart = (event, sessionId) => {
+        if (event.target && typeof event.target.closest === 'function' && event.target.closest('button,input')) {
+          event.preventDefault();
+          return;
+        }
+        if (list.byId?.[sessionId]?.blank === true) {
+          event.preventDefault();
+          return;
+        }
+        const info = {
+          kind: 'session',
+          sessionId,
+          workspaceId: UNGROUPED_KEY,
+          groupId: null,
+          ungrouped: true,
+        };
+        dragRef.current = info;
+        setDragInfo(info);
+        setDropHint(null);
+        try {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', sessionId);
+          event.dataTransfer.setData('application/x-dsh-session-group', JSON.stringify(info));
+        } catch {
+          /* dataTransfer may be unavailable in synthetic drags */
+        }
+      };
+
+      const handleUngroupedSessionDragOver = (event, targetSessionId) => {
+        const drag = dragRef.current;
+        if (!drag || drag.kind !== 'session' || !drag.ungrouped || drag.sessionId === targetSessionId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+          event.dataTransfer.dropEffect = 'move';
+        } catch {
+          /* ignore */
+        }
+        const zone = rowDropZone(event);
+        setDropHint({
+          kind: 'row',
+          id: targetSessionId,
+          position: zone === 'after' ? 'after' : 'before',
+        });
+      };
+
+      const handleUngroupedSessionDrop = (event, targetSessionId) => {
+        const drag = dragRef.current;
+        if (!drag || drag.kind !== 'session' || !drag.ungrouped || drag.sessionId === targetSessionId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const zone = rowDropZone(event);
+        commitUngroupedReorder(drag.sessionId, targetSessionId, zone === 'after' ? 'after' : 'before');
+      };
+
+      const handleUngroupedBodyDragOver = (event) => {
+        const drag = dragRef.current;
+        if (!drag || !drag.ungrouped) return;
+        event.preventDefault();
+        event.stopPropagation();
+      };
+
+      const handleUngroupedBodyDrop = (event) => {
+        const drag = dragRef.current;
+        if (!drag || !drag.ungrouped) return;
+        event.preventDefault();
+        event.stopPropagation();
+        commitUngroupedReorder(drag.sessionId, undefined, 'end');
+      };
+
+      const toggleWorkspace = (workspaceId) => {
+        setPrefs((previous) => {
+          const collapsed = { ...(previous.collapsedWorkspaces ?? {}) };
+          if (collapsed[workspaceId]) delete collapsed[workspaceId];
+          else collapsed[workspaceId] = true;
+          return { ...previous, collapsedWorkspaces: collapsed };
+        });
+      };
+
+      const toggleGroup = (workspaceId, groupId) => {
+        setPrefs((previous) => {
+          const groups = previous.groups?.[workspaceId];
+          if (!Array.isArray(groups)) return previous;
+          const target = groups.find((group) => group.id === groupId);
+          if (!target) return previous;
+          return patchGroup(previous, workspaceId, groupId, { collapsed: !target.collapsed });
+        });
+      };
+
+      const beginGroupRename = (workspaceId, groupId) => {
+        const groups = prefs.groups?.[workspaceId] ?? [];
+        const group = groups.find((item) => item.id === groupId);
+        if (!group) return;
+        setEditingGroup({ workspaceId, groupId, value: group.name });
+        closeMenu();
+      };
+
+      const commitGroupRename = (value) => {
+        if (!editingGroup) return;
+        const { workspaceId, groupId } = editingGroup;
+        setEditingGroup(null);
+        setPrefs((previous) => patchGroup(previous, workspaceId, groupId, { name: value }));
+      };
+
+      const cancelGroupRename = () => setEditingGroup(null);
+
+      const beginWorkspaceRename = (workspace) => {
+        const title = workspace.title || workspace.path || '';
+        setEditingWorkspace({ workspaceId: workspace.workspaceId, value: title });
+        closeMenu();
+      };
+
+      const commitWorkspaceRename = async (value) => {
+        if (!editingWorkspace) return;
+        const { workspaceId } = editingWorkspace;
+        setEditingWorkspace(null);
+        try {
+          await renameWorkspace(workspaceId, value);
+          notify(tr('workspace.renamed'));
+        } catch (error) {
+          notify(tr('workspace.renameFailed', { reason: errorMessage(error) }));
+        }
+      };
+
+      const cancelWorkspaceRename = () => setEditingWorkspace(null);
+
+      const menuRectFor = (event) => {
+        if (event.type === 'contextmenu') {
+          return {
+            left: event.clientX,
+            top: event.clientY - 4,
+            bottom: event.clientY,
+          };
+        }
+        const rect = event.currentTarget.getBoundingClientRect();
+        return { left: rect.left, top: rect.top, bottom: rect.bottom };
+      };
+
+      const openWorkspaceMenu = (event, workspace) => {
+        dismissHoverCard();
+        event.stopPropagation();
+        const rect = menuRectFor(event);
+        setMenu({
+          kind: 'workspace',
+          workspaceId: workspace.workspaceId,
+          rect: { left: rect.left, top: rect.top, bottom: rect.bottom },
+        });
+      };
+
+      const handleDeleteWorkspace = async (workspace) => {
+        closeMenu();
+        const title = workspace.title || workspace.path || '';
+        try {
+          if (typeof window.confirm === 'function'
+            && !window.confirm(tr('workspace.deleteConfirm', { name: title }))) {
+            return;
+          }
+          await deleteWorkspace(workspace.workspaceId);
+          notify(tr('workspace.deleted'));
+        } catch (error) {
+          notify(tr('workspace.deleteFailed', { reason: errorMessage(error) }));
+        }
+      };
+
+      const chooseWorkspaceLayout = (mode) => {
+        closeMenu();
+        setViewMenu(null);
+        setPrefs((previous) => ({
+          ...previous,
+          workspaceTree: mode === 'tree',
+          flatList: mode === 'flat',
+        }));
+      };
+
+      const handleSortWorkspace = (workspaceId, mode) => {
+        closeMenu();
+        setPrefs((previous) => sortScope(previous, workspaceId, mode));
+        notify(tr(mode === 'initial' ? 'sort.done.initial' : 'sort.done.time'));
+      };
+
+      const handleSortAll = (mode) => {
+        closeMenu();
+        setViewMenu(null);
+        setPrefs((previous) => sortScope(previous, null, mode));
+        notify(tr(mode === 'initial' ? 'sort.done.initial' : 'sort.done.time'));
+      };
+
+      const handleToggleWorkspaceTree = () => {
+        closeMenu();
+        setViewMenu(null);
+        setPrefs((previous) => ({
+          ...previous,
+          workspaceTree: previous.workspaceTree !== true,
+          flatList: false,
+        }));
+      };
+
+      const handleToggleFlatList = () => {
+        closeMenu();
+        setViewMenu(null);
+        setPrefs((previous) => ({
+          ...previous,
+          flatList: previous.flatList !== true,
+          workspaceTree: false,
+        }));
+      };
+
+      const handleToggleHideArchived = () => {
+        closeMenu();
+        setViewMenu(null);
+        setPrefs((previous) => ({
+          ...previous,
+          hideArchived: previous.hideArchived === false,
+        }));
+      };
+
+      const openViewMenu = (event) => {
+        event.stopPropagation();
+        const rect = event.currentTarget.getBoundingClientRect();
+        setViewMenu({ rect: { left: rect.left, top: rect.top, bottom: rect.bottom } });
+      };
+
+      const applyViewAction = (action) => {
+        setViewMenu(null);
+        setPrefs((previous) => {
+          if (action === 'expandGroups' || action === 'collapseGroups') {
+            const collapsed = action === 'collapseGroups';
+            const groups = {};
+            for (const [workspaceId, list] of Object.entries(previous.groups ?? {})) {
+              groups[workspaceId] = list.map((group) => (
+                group.collapsed === collapsed ? group : { ...group, collapsed }
+              ));
+            }
+            return { ...previous, groups };
+          }
+          if (action === 'expandWorkspaces') {
+            return { ...previous, collapsedWorkspaces: {} };
+          }
+          if (action === 'collapseWorkspaces') {
+            const collapsedWorkspaces = {};
+            for (const workspace of workspaces) collapsedWorkspaces[workspace.workspaceId] = true;
+            return { ...previous, collapsedWorkspaces };
+          }
+          if (action === 'resetOrder') {
+            return { ...previous, manualOrders: {} };
+          }
+          return previous;
+        });
+      };
+
+      const openGroupMenu = (event, workspaceId, groupId) => {
+        dismissHoverCard();
+        event.stopPropagation();
+        const rect = menuRectFor(event);
+        setColorEditor(null);
+        setMenu({
+          kind: 'group',
+          workspaceId,
+          groupId,
+          rect: { left: rect.left, top: rect.top, bottom: rect.bottom },
+        });
+      };
+
+      const openSessionMenu = (event, workspaceId, groupId, sessionId) => {
+        dismissHoverCard();
+        event.stopPropagation();
+        const rect = menuRectFor(event);
+        setMenu({
+          kind: 'session',
+          workspaceId,
+          groupId: groupId ?? null,
+          sessionId,
+          rect: { left: rect.left, top: rect.top, bottom: rect.bottom },
+        });
+      };
+
+      const beginSessionRename = (sessionId) => {
+        if (list.byId?.[sessionId]?.blank) return;
+        setEditingSession({ sessionId, value: titleOf(sessionId) });
+        closeMenu();
+      };
+
+      const commitSessionRename = async (value) => {
+        if (!editingSession) return;
+        const { sessionId } = editingSession;
+        setEditingSession(null);
+        try {
+          await renameSession(sessionId, value);
+        } catch (error) {
+          notify(tr('notice.renameFailed', { reason: errorMessage(error) }));
+        }
+      };
+
+      const cancelSessionRename = () => setEditingSession(null);
+
+      const handleTogglePin = async (sessionId) => {
+        const pinned = pinnedSessionIds.has(sessionId);
+        closeMenu();
+        try {
+          if (pinned) await unpinSession(sessionId);
+          else await pinSession(sessionId);
+        } catch (error) {
+          notify(tr('notice.pinFailed', { reason: errorMessage(error) }));
+        }
+      };
+
+      const handleUnarchive = async (sessionId) => {
+        closeMenu();
+        try {
+          await unarchiveSession(sessionId);
+        } catch (error) {
+          notify(tr('notice.archiveFailed', { reason: errorMessage(error) }));
+        }
+      };
+
+      const handleArchive = async (sessionId) => {
+        closeMenu();
+        try {
+          await archiveSession(sessionId);
+          notify(tr('notice.archived'));
+        } catch (error) {
+          notify(tr('notice.archiveFailed', { reason: errorMessage(error) }));
+        }
+      };
+
+      const handleFork = async (sessionId) => {
+        closeMenu();
+        try {
+          await forkSession(sessionId);
+        } catch (error) {
+          notify(tr('notice.forkFailed', { reason: errorMessage(error) }));
+        }
+      };
+
+      const handleCopyId = async (sessionId) => {
+        closeMenu();
+        try {
+          await navigator.clipboard.writeText(sessionId);
+          notify(tr('notice.copied'));
+        } catch (error) {
+          notify(tr('notice.copyFailed', { reason: errorMessage(error) }));
+        }
+      };
+
+      const handleCreateGroupForSession = (workspaceId, sessionId) => {
+        closeMenu();
+        const section = sections.find((candidate) => candidate.workspace?.workspaceId === workspaceId);
+        const topItems = query ? null : section?.topItems;
+        setPrefs((previous) => {
+          const removed = removeSessionFromGroups(previous, workspaceId, sessionId);
+          return createGroupAt(
+            removed,
+            workspaceId,
+            [sessionId],
+            (index) => tr('group.defaultName', { n: index + 1 }),
+            sessionId,
+            topItems,
+          );
+        });
+        notify(tr('notice.grouped'));
+      };
+
+      const handleMoveToGroup = (workspaceId, groupId, sessionId) => {
+        closeMenu();
+        setPrefs((previous) => {
+          const removed = removeSessionFromGroups(previous, workspaceId, sessionId);
+          return insertIntoGroup(removed, workspaceId, groupId, sessionId, null, 'end');
+        });
+        notify(tr('notice.grouped'));
+      };
+
+      const handleRemoveFromGroup = (workspaceId, sessionId) => {
+        closeMenu();
+        setPrefs((previous) => removeSessionFromGroups(previous, workspaceId, sessionId));
+        notify(tr('notice.ungrouped'));
+      };
+
+      const handleDissolveGroup = (workspaceId, groupId) => {
+        closeMenu();
+        setPrefs((previous) => dissolveGroup(previous, workspaceId, groupId));
+        notify(tr('notice.groupDissolved'));
+      };
+
+      const openColorEditor = (workspaceId, groupId, color) => {
+        const rgb = hexToRgb(color) ?? { r: 128, g: 128, b: 128 };
+        setColorEditor({
+          workspaceId,
+          groupId,
+          r: String(rgb.r),
+          g: String(rgb.g),
+          b: String(rgb.b),
+          error: '',
+        });
+      };
+
+      const updateColorEditorChannel = (channel, value) => {
+        setColorEditor((previous) => (
+          previous ? { ...previous, [channel]: value, error: '' } : previous
+        ));
+      };
+
+      const applyColorEditor = () => {
+        if (!colorEditor) return;
+        const channels = [colorEditor.r, colorEditor.g, colorEditor.b];
+        const values = channels.map((value) => {
+          if (typeof value !== 'string' || !/^\d{1,3}$/.test(value.trim())) return null;
+          const number = Number(value.trim());
+          return Number.isInteger(number) && number >= 0 && number <= 255 ? number : null;
+        });
+        if (values.some((value) => value === null)) {
+          setColorEditor((previous) => (previous ? { ...previous, error: tr('group.rgbInvalid') } : previous));
+          return;
+        }
+        const color = rgbToHex(values[0], values[1], values[2]);
+        setPrefs((previous) => patchGroup(
+          previous,
+          colorEditor.workspaceId,
+          colorEditor.groupId,
+          { color },
+        ));
+        closeMenu();
+      };
+
+      const handleMoveGroupToGroup = (workspaceId, groupId, targetGroupId) => {
+        closeMenu();
+        setPrefs((previous) => {
+          const groups = previous.groups?.[workspaceId] ?? [];
+          if (!canNestGroup(groups, groupId, targetGroupId)) return previous;
+          const source = groups.find((group) => group.id === groupId);
+          if (!source) return previous;
+          let next = updateGroups(
+            previous,
+            workspaceId,
+            groups.map((group) => (
+              group.id === groupId ? { ...group, parentGroupId: targetGroupId } : group
+            )),
+          );
+          if (!source.parentGroupId) {
+            const order = (next.topOrders?.[workspaceId] ?? []).filter((key) => key !== topKeyOfGroup(groupId));
+            next = setTopOrder(next, workspaceId, order);
+          }
+          return next;
+        });
+        notify(tr('group.moved'));
+      };
+
+      const handleMoveGroupOut = (workspaceId, groupId) => {
+        closeMenu();
+        setPrefs((previous) => {
+          const groups = previous.groups?.[workspaceId] ?? [];
+          const source = groups.find((group) => group.id === groupId);
+          if (!source || !source.parentGroupId) return previous;
+          let next = updateGroups(
+            previous,
+            workspaceId,
+            groups.map((group) => (
+              group.id === groupId ? { ...group, parentGroupId: undefined } : group
+            )),
+          );
+          const order = [...(next.topOrders?.[workspaceId] ?? [])];
+          if (!order.includes(topKeyOfGroup(groupId))) order.push(topKeyOfGroup(groupId));
+          next = setTopOrder(next, workspaceId, order);
+          return next;
+        });
+        notify(tr('group.moved'));
+      };
+
+      const handleCreateSubgroup = (workspaceId, parentGroupId) => {
+        closeMenu();
+        setPrefs((previous) => {
+          const groups = previous.groups?.[workspaceId] ?? [];
+          const parent = groups.find((group) => group.id === parentGroupId);
+          if (!parent || groupDepth(groups, parentGroupId) >= 3) return previous;
+          const group = {
+            id: newGroupId(),
+            name: tr('group.defaultName', { n: groups.length + 1 }),
+            color: GROUP_COLORS[groups.length % GROUP_COLORS.length],
+            collapsed: false,
+            parentGroupId,
+            sessionIds: [],
+          };
+          return updateGroups(previous, workspaceId, [...groups, group]);
+        });
+        notify(tr('group.subgroupCreated'));
+      };
+
+      const handleAddWorkspace = () => {
+        setAddWorkspaceDialog({ busy: false, error: '' });
+      };
+
+      const closeAddWorkspaceDialog = () => {
+        if (addWorkspaceDialog?.busy) return;
+        setAddWorkspaceDialog(null);
+      };
+
+      const pickAddWorkspaceDirectory = async (path) => {
+        if (!path || addWorkspaceDialog?.busy) return;
+        setAddingWorkspace(true);
+        setAddWorkspaceDialog((previous) => previous ? { ...previous, busy: true, error: '' } : previous);
+        try {
+          if (typeof addWorkspaceAtPath === 'function') await addWorkspaceAtPath(path);
+          else await addWorkspace();
+          setAddWorkspaceDialog(null);
+          notify(tr('notice.workspaceAdded'));
+        } catch (error) {
+          const message = errorMessage(error);
+          setAddWorkspaceDialog((previous) => previous ? { ...previous, busy: false, error: message } : previous);
+          notify(tr('notice.addWorkspaceFailed', { reason: message }));
+        } finally {
+          setAddingWorkspace(false);
+        }
+      };
+
+      const handleNewSessionInGroup = (workspaceId, groupId) => {
+        if (pendingGroupSessionRef.current) return;
+        const workspace = workspaces.find((item) => item.workspaceId === workspaceId);
+        const known = new Set([
+          ...(list.ids ?? []),
+          ...((workspace?.sessionIds) ?? []),
+        ]);
+        const pending = { workspaceId, groupId, known };
+        pendingGroupSessionRef.current = pending;
+        window.setTimeout(() => {
+          if (pendingGroupSessionRef.current === pending) pendingGroupSessionRef.current = null;
+        }, 10000);
+        try {
+          startSession(workspaceId);
+        } catch (error) {
+          pendingGroupSessionRef.current = null;
+          notify(tr('notice.newSessionFailed', { reason: errorMessage(error) }));
+        }
+      };
+
+      const WATERMARK_BASE = 5;
+      const WATERMARK_AUTO_MAX = 50;
+
+      const statusInfoFor = (sessionId) => {
+        const row = list.byId?.[sessionId] ?? {};
+        const uiStatus = statusValue(sessionStatusesMap, sessionId);
+        const statuses = buildSessionStatuses({
+          running: uiStatus?.running ?? row.running,
+          completed: uiStatus?.completionUnread === true,
+          pendingInteraction: visiblePendingKind(uiStatus?.pendingInteraction?.kind),
+          runningSubagentCount: runningChildCountFor(list, sessionId, sessionStatusesMap),
+        }, tr);
+        const primaryStatus = statuses[0];
+        return {
+          row,
+          statuses,
+          primaryStatus,
+          showStatus: row.blank !== true
+            && !archivedSessionIds.has(sessionId)
+            && primaryStatus.state !== 'idle',
+        };
+      };
+
+      const subagentStatusFor = (entry) => {
+        if (!entry || entry.mode === 'external') return null;
+        if (!subagentRunningFor(list, entry.id, sessionStatusesMap)) return null;
+        return {
+          state: 'ongoing',
+          label: tr('status.running'),
+        };
+      };
+
+      const watermarkRows = (sessionIds, watermark) => {
+        let count = 0;
+        const rows = sessionIds.filter((sessionId) => {
+          if (list.byId?.[sessionId]?.blank === true) return true;
+          count += 1;
+          return count <= watermark;
+        });
+        return { rows, hiddenCount: sessionIds.length - rows.length };
+      };
+
+      const requiredWatermark = (sessionIds) => {
+        let index = 0;
+        let required = 0;
+        for (const sessionId of sessionIds) {
+          if (list.byId?.[sessionId]?.blank === true) continue;
+          index += 1;
+          const info = statusInfoFor(sessionId);
+          if (index <= WATERMARK_AUTO_MAX && (info.showStatus || sessionId === currentSessionId)) {
+            required = index;
+          }
+        }
+        return required;
+      };
+
+      const overflowFor = (key, sessionIds) => {
+        if (query) {
+          return { rows: sessionIds, button: null };
+        }
+        const base = watermarkRows(sessionIds, WATERMARK_BASE);
+        const collapsedHidden = sessionIds.length - base.rows.length;
+        if (collapsedHidden <= 0) {
+          return { rows: sessionIds, button: null };
+        }
+        const expanded = overflowExpanded[key] === true;
+        const watermark = expanded
+          ? sessionIds.length
+          : Math.max(WATERMARK_BASE, requiredWatermark(sessionIds));
+        const visible = watermarkRows(sessionIds, watermark);
+        const sessionsExpanded = visible.hiddenCount === 0;
+        return {
+          rows: visible.rows,
+          button: h(
+            'button',
+            {
+              type: 'button',
+              className: 'dsg-sessionOverflow',
+              'aria-expanded': sessionsExpanded ? 'true' : 'false',
+              onClick: () => setOverflowExpanded((previous) => ({
+                ...previous,
+                [key]: previous[key] !== true,
+              })),
+            },
+            sessionsExpanded
+              ? tr('sessions.collapse')
+              : tr('sessions.expand', { n: visible.hiddenCount }),
+          ),
+        };
+      };
+
+      const renderSessionRow = (sessionId, workspaceId, groupId, options = {}) => {
+        const active = activePanelId === null && currentSessionId === sessionId;
+        const canDrag = options.canDrag !== undefined
+          ? options.canDrag === true
+          : Boolean(workspaceId) && !query
+            && list.byId?.[sessionId]?.blank !== true
+            && !archivedSessionIds.has(sessionId);
+        let dropPos = dropHint?.kind === 'row' && dropHint.id === sessionId ? dropHint.position : null;
+        if (dropHint?.kind === 'top' && dropHint.key === topKeyOfSession(sessionId)) {
+          dropPos = dropHint.position;
+        }
+        const dropGroup = dropHint?.kind === 'rowGroup' && dropHint.id === sessionId;
+        const { row, statuses, primaryStatus, showStatus } = statusInfoFor(sessionId);
+        return h(SessionRow, {
+          key: sessionId,
+          sessionId,
+          title: titleOf(sessionId),
+          blank: row.blank === true,
+          menuOpen: menu?.kind === 'session' && menu.sessionId === sessionId,
+          scheduleTasks: scheduleBySession.get(sessionId) ?? [],
+          timeText: row.blank
+            ? ''
+            : primaryStatus.trailingLabel ?? relativeTime(row.updatedAt, now, tr),
+          statuses,
+          showStatus,
+          active,
+          pinned: pinnedSessionIds.has(sessionId),
+          archived: archivedSessionIds.has(sessionId),
+          editing: editingSession?.sessionId === sessionId,
+          editingValue: editingSession?.value ?? '',
+          dragging: dragInfo?.sessionId === sessionId,
+          dropPos,
+          dropGroup,
+          subagentCount: Array.isArray(options.subagentCatalog) ? options.subagentCatalog.length : 0,
+          subagentsExpanded: options.subagentsExpanded === true,
+          onToggleSubagents: options.onToggleSubagents,
+          canDrag,
+          t: tr,
+          onOpen: (id) => {
+            dismissHoverCard();
+            openSession(id);
+          },
+          onRenameStart: () => beginSessionRename(sessionId),
+          onRenameCommit: commitSessionRename,
+          onRenameCancel: cancelSessionRename,
+          onTogglePin: handleTogglePin,
+          onArchive: (id) => handleArchive(id),
+          onUnarchive: (id) => handleUnarchive(id),
+          onMenu: (event, id) => openSessionMenu(event, workspaceId, groupId, id),
+          onHoverStart: (event, id) => scheduleHoverCard(event, id),
+          onHoverEnd: scheduleHoverClose,
+          renderSlot,
+          onDragStart: options.onDragStart ?? ((event, id) => handleDragStart(event, id, workspaceId, groupId)),
+          onDragOver: options.onDragOver ?? (canDrag
+            ? (event, id) => handleRowDragOver(event, workspaceId, groupId, id)
+            : undefined),
+          onDrop: options.onDrop ?? (canDrag
+            ? (event, id) => handleRowDrop(event, workspaceId, groupId, id)
+            : undefined),
+          onDragEnd: options.onDragEnd ?? handleDragEnd,
+        });
+      };
+
+      const renderSubagentRow = (parentSessionId, entry) => {
+        const label = subagentLabelOf(entry);
+        const external = entry.mode === 'external';
+        const status = subagentStatusFor(entry);
+        const active = activePanelId === null && currentSessionId === entry.id;
+        return h(
+          'div',
+          {
+            key: 'subagent:' + entry.id,
+            className: 'dsg-subagentRow'
+              + (external ? ' disabled' : '')
+              + (active ? ' active' : ''),
+            role: external ? undefined : 'button',
+            tabIndex: external ? undefined : 0,
+            title: label,
+            'data-subagent-id': entry.id,
+            onClick: external ? undefined : () => openSubagentSession(parentSessionId, entry),
+            onKeyDown: external ? undefined : (event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              openSubagentSession(parentSessionId, entry);
+            },
+          },
+          h(IconSubagent, { width: 14, height: 14, className: 'dsg-subagentRowIcon' }),
+          status
+            ? h(
+                'span',
+                {
+                  className: 'dsg-subagentStatusSlot',
+                  title: status.label,
+                  'aria-label': status.label,
+                },
+                h(StateDot, { state: status.state }),
+              )
+            : null,
+          h('span', { className: 'dsg-subagentTitle' }, label),
+        );
+      };
+
+      const renderSessionNode = (sessionId, workspaceId, groupId, options = {}) => {
+        const catalog = subagentCatalogOf(sessionId);
+        const expanded = catalog.length > 0 && expandedSubagentSessions.has(sessionId);
+        const row = renderSessionRow(sessionId, workspaceId, groupId, {
+          ...options,
+          subagentCatalog: catalog,
+          subagentsExpanded: expanded,
+          onToggleSubagents: toggleSubagentSession,
+        });
+        if (!expanded) return row;
+        return h(
+          React.Fragment,
+          { key: sessionId },
+          row,
+          h(
+            'div',
+            {
+              className: 'dsg-subagentList',
+              role: 'group',
+              'aria-label': tr('subagents.label'),
+            },
+            catalog.map((entry) => renderSubagentRow(sessionId, entry)),
+          ),
+        );
+      };
+
+      const renderGroup = (workspace, node) => {
+        const { group, members, children, allMembers, totalMembers } = node;
+        const orderedMembers = pinnedFirst(members, pinnedSessionIds);
+        const overflow = overflowFor('group:' + workspace.workspaceId + ':' + group.id, orderedMembers);
+        const childByKey = new Map(children.map((child) => [topKeyOfGroup(child.group.id), child]));
+        const directKeys = resolveGroupOrder(
+          prefs,
+          group.id,
+          members,
+          children.map((child) => child.group.id),
+        );
+        const visibleSessionKeys = new Set(overflow.rows.map((sessionId) => topKeyOfSession(sessionId)));
+        const lastVisibleSessionKey = [...directKeys].reverse().find((key) => visibleSessionKeys.has(key));
+        const editing = editingGroup?.workspaceId === workspace.workspaceId
+          && editingGroup?.groupId === group.id;
+        const dropTopPosition = dropHint?.kind === 'topGroup'
+          && dropHint.key === topKeyOfGroup(group.id)
+          ? dropHint.position
+          : dropHint?.kind === 'groupEdge' && dropHint.id === group.id
+            ? dropHint.position
+            : null;
+        const dragging = dragInfo?.kind === 'group' && dragInfo.groupId === group.id;
+        const collapsed = group.collapsed && !query;
+        const selected = collapsed
+          && activePanelId === null
+          && currentSessionId !== null
+          && allMembers.includes(currentSessionId);
+        const collapsedStatuses = [];
+        if (collapsed) {
+          const buckets = new Map();
+          for (const sessionId of allMembers) {
+            const info = statusInfoFor(sessionId);
+            if (!info.showStatus) continue;
+            const state = info.primaryStatus.state;
+            const bucket = buckets.get(state) ?? {
+              state,
+              label: info.primaryStatus.label,
+              count: 0,
+              priority: state === 'warning' ? 0 : state === 'ongoing' ? 1 : 2,
+            };
+            bucket.count += 1;
+            buckets.set(state, bucket);
+          }
+          collapsedStatuses.push(...[...buckets.values()].sort((left, right) => (
+            left.priority - right.priority
+          )));
+        }
+        return h(
+          'div',
+          { key: group.id, className: 'dsg-group' },
+          h(GroupHeader, {
+            group,
+            count: totalMembers,
+            collapsed,
+            selected,
+            draggable: true,
+            statuses: collapsedStatuses,
+            dropTopPosition,
+            dragging,
+            editing,
+            editingValue: editing ? editingGroup.value : '',
+            onToggle: () => toggleGroup(workspace.workspaceId, group.id),
+            onMenu: (event) => openGroupMenu(event, workspace.workspaceId, group.id),
+            onAddSession: () => handleNewSessionInGroup(workspace.workspaceId, group.id),
+            onEditStart: () => beginGroupRename(workspace.workspaceId, group.id),
+            onEditChange: (value) => setEditingGroup((previous) => (previous ? { ...previous, value } : previous)),
+            onEditCommit: commitGroupRename,
+            onEditCancel: cancelGroupRename,
+            onDragOver: (event) => handleGroupDragOver(event, workspace.workspaceId, group.id),
+            onDrop: (event) => handleGroupDrop(event, workspace.workspaceId, group.id),
+            onDragStart: (event) => handleGroupDragStart(event, workspace.workspaceId, group.id),
+            onDragEnd: handleDragEnd,
+            t: tr,
+          }),
+          collapsed
+            ? null
+            : h(
+                'div',
+                {
+                  className: 'dsg-groupBody',
+                  style: groupColorVars(group.color),
+                  onDragOver: (event) => handleGroupDragOver(event, workspace.workspaceId, group.id),
+                  onDrop: (event) => handleGroupDrop(event, workspace.workspaceId, group.id),
+                },
+                (() => {
+                  const body = [];
+                  for (const key of directKeys) {
+                    if (key.startsWith('s:')) {
+                      const sessionId = key.slice(2);
+                      if (!visibleSessionKeys.has(key)) continue;
+                      body.push(renderSessionNode(sessionId, workspace.workspaceId, group.id));
+                      if (key === lastVisibleSessionKey && overflow.button) body.push(overflow.button);
+                    } else if (key.startsWith('g:')) {
+                      const child = childByKey.get(key);
+                      if (child) body.push(renderGroup(workspace, child));
+                    }
+                  }
+                  if (overflow.button && overflow.rows.length === 0) body.push(overflow.button);
+                  return body;
+                })(),
+              ),
+        );
+      };
+
+      const renderWorkspace = (section, depth = 0) => {
+        if (section.ungroupedOnly) {
+          // DSH treats sessions outside every registered Workspace as one
+          // trailing pseudo-workspace. Mirror it here: folder header, chevron,
+          // collapse state, row order, status summary, and drag ordering all
+          // behave like a real Workspace, but there are no workspace actions.
+          const collapsed = section.collapsed === true;
+          const allIds = Array.isArray(section.ungroupedAll) ? section.ungroupedAll : section.ungrouped;
+          const ungroupedOverflow = overflowFor('ungrouped:' + section.key, section.ungrouped);
+          const ungroupedActive = activePanelId === null
+            && currentSessionId !== null
+            && allIds.includes(currentSessionId);
+          const ungroupedSelected = collapsed && ungroupedActive;
+          const collapsedStatuses = [];
+          if (collapsed) {
+            const buckets = new Map();
+            for (const sessionId of allIds) {
+              if (!isVisible(sessionId)) continue;
+              const info = statusInfoFor(sessionId);
+              if (!info.showStatus) continue;
+              const state = info.primaryStatus.state;
+              const bucket = buckets.get(state) ?? {
+                state,
+                label: info.primaryStatus.label,
+                count: 0,
+                priority: state === 'warning' ? 0 : state === 'ongoing' ? 1 : 2,
+              };
+              bucket.count += 1;
+              buckets.set(state, bucket);
+            }
+            collapsedStatuses.push(...[...buckets.values()].sort((left, right) => (
+              left.priority - right.priority
+            )));
+          }
+          return h(
+            'section',
+            { className: 'dsg-workspace dsg-ungroupedSection', key: section.key },
+            h(
+              'div',
+              {
+                className: 'dsg-wsHeader dsg-ungroupedWsHeader'
+                  + (ungroupedActive ? ' active' : '')
+                  + (ungroupedSelected ? ' selected' : ''),
+                role: 'button',
+                tabIndex: 0,
+                'data-ungrouped': 'true',
+                'aria-expanded': !collapsed,
+                'aria-current': ungroupedSelected ? 'true' : undefined,
+                title: tr('ungrouped'),
+                onClick: () => toggleWorkspace(UNGROUPED_KEY),
+                onKeyDown: (event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    toggleWorkspace(UNGROUPED_KEY);
+                  }
+                },
+              },
+              h('span', { className: 'dsg-folder' }, h(collapsed ? IconFolderClose : IconFolderOpen)),
+              h(
+                'span',
+                { className: 'dsg-wsChevron' + (collapsed ? '' : ' open') },
+                h(IconTriangle, { width: 15, height: 15 }),
+              ),
+              collapsedStatuses.length > 0
+                ? h(
+                    'span',
+                    {
+                      className: 'dsg-wsStatuses',
+                      title: collapsedStatuses.map((status) => (
+                        status.count > 1 ? `${status.label} ×${status.count}` : status.label
+                      )).join('，'),
+                      'aria-label': collapsedStatuses.map((status) => (
+                        status.count > 1 ? `${status.label} ×${status.count}` : status.label
+                      )).join('，'),
+                    },
+                    collapsedStatuses.map((status) => h(
+                      'span',
+                      { key: status.state, className: 'dsg-wsStatusItem' },
+                      h(StateDot, { state: status.state }),
+                      status.count > 1
+                        ? h('span', { className: 'dsg-wsStatusCount' }, String(status.count))
+                        : null,
+                    )),
+                  )
+                : null,
+              h('span', { className: 'dsg-wsName' }, tr('ungrouped')),
+            ),
+            collapsed
+              ? null
+              : h(
+                  'div',
+                  {
+                    className: 'dsg-wsBody dsg-ungroupedBody',
+                    onDragOver: handleUngroupedBodyDragOver,
+                    onDrop: handleUngroupedBodyDrop,
+                  },
+                  ungroupedOverflow.rows.map((sessionId) => renderSessionNode(sessionId, null, null, {
+                    canDrag: list.byId?.[sessionId]?.blank !== true && !archivedSessionIds.has(sessionId),
+                    onDragStart: handleUngroupedSessionDragStart,
+                    onDragOver: handleUngroupedSessionDragOver,
+                    onDrop: handleUngroupedSessionDrop,
+                  })),
+                  ungroupedOverflow.button,
+                ),
+          );
+        }
+        const { workspace, groups, ungrouped, collapsed } = section;
+        let childSections = workspaceTreeMode
+          ? treeLayout.childrenByParent.get(workspace.workspaceId) ?? []
+          : [];
+        const savedChildOrder = workspaceTreeMode
+          ? prefs.childOrders?.[workspace.workspaceId]
+          : null;
+        if (Array.isArray(savedChildOrder) && childSections.length > 0) {
+          const byId = new Map(childSections.map((child) => [child.workspace.workspaceId, child]));
+          const ordered = [];
+          for (const childId of savedChildOrder) {
+            const child = byId.get(childId);
+            if (!child) continue;
+            ordered.push(child);
+            byId.delete(childId);
+          }
+          for (const child of childSections) {
+            if (byId.has(child.workspace.workspaceId)) ordered.push(child);
+          }
+          childSections = ordered;
+        }
+        const sectionIndent = workspaceTreeMode ? depth * 24 : 0;
+        const ungroupedOverflow = overflowFor('workspace:' + workspace.workspaceId, ungrouped);
+        const visibleUngrouped = new Set(ungroupedOverflow.rows);
+        const topItems = section.topItems.filter((item) => (
+          item.kind === 'group' || visibleUngrouped.has(item.id)
+        ));
+        const hasGroups = groups.length > 0;
+        const zoneActive = dropHint?.kind === 'ungrouped' && dropHint.workspaceId === workspace.workspaceId;
+        const topEndActive = dragInfo?.kind === 'group'
+          && dropHint?.kind === 'topEnd'
+          && dropHint.workspaceId === workspace.workspaceId;
+        const showUngroupBar = Boolean(dragInfo?.groupId)
+          && dragInfo.workspaceId === workspace.workspaceId
+          && hasGroups;
+        const workspaceActive = activePanelId === null
+          && currentSessionId !== null
+          && (workspace.sessionIds ?? []).includes(currentSessionId);
+        const workspaceSelected = workspaceTreeMode
+          && depth > 0
+          && collapsed
+          && activePanelId === null
+          && currentSessionId !== null
+          && collectWorkspaceSessionIds(workspace).includes(currentSessionId);
+        const collapsedWorkspaceStatuses = [];
+        if (collapsed) {
+          const buckets = new Map();
+          for (const sessionId of collectWorkspaceSessionIds(workspace)) {
+            if (!isVisible(sessionId)) continue;
+            const info = statusInfoFor(sessionId);
+            if (!info.showStatus) continue;
+            const state = info.primaryStatus.state;
+            const bucket = buckets.get(state) ?? {
+              state,
+              label: info.primaryStatus.label,
+              count: 0,
+              priority: state === 'warning' ? 0 : state === 'ongoing' ? 1 : 2,
+            };
+            bucket.count += 1;
+            buckets.set(state, bucket);
+          }
+          collapsedWorkspaceStatuses.push(...[...buckets.values()].sort((left, right) => (
+            left.priority - right.priority
+          )));
+        }
+        return h(
+          'section',
+          {
+            className: 'dsg-workspace',
+            key: section.key,
+            style: {
+              '--dsg-ws-indent': `${sectionIndent}px`,
+              '--dsg-ws-row-indent': `${workspaceTreeMode && depth > 0 ? depth * 24 : 0}px`,
+            },
+          },
+          h(
+            'div',
+            {
+              className: 'dsg-wsHeader'
+                + (workspaceActive ? ' active' : '')
+                + (workspaceSelected ? ' selected' : ''),
+              role: 'button',
+              tabIndex: 0,
+              'data-workspace-id': workspace.workspaceId,
+              'aria-expanded': !collapsed,
+              'aria-current': workspaceSelected ? 'true' : undefined,
+              title: workspace.path || workspaceTitle(workspace),
+              onClick: () => toggleWorkspace(workspace.workspaceId),
+              onKeyDown: (event) => {
+                if (event.target !== event.currentTarget) return;
+                if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+                  event.preventDefault();
+                  openWorkspaceMenu(event, workspace);
+                  return;
+                }
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  toggleWorkspace(workspace.workspaceId);
+                }
+              },
+              onContextMenu: (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openWorkspaceMenu(event, workspace);
+              },
+              onDragOver: (event) => handleWorkspaceDragOver(event, workspace.workspaceId),
+              onDrop: (event) => handleWorkspaceDrop(event, workspace.workspaceId),
+            },
+            h('span', { className: 'dsg-folder' }, h(collapsed ? IconFolderClose : IconFolderOpen)),
+            h(
+              'span',
+              { className: 'dsg-wsChevron' + (collapsed ? '' : ' open') },
+              h(IconTriangle, { width: 15, height: 15 }),
+            ),
+            collapsedWorkspaceStatuses.length > 0
+              ? h(
+                  'span',
+                  {
+                    className: 'dsg-wsStatuses',
+                    title: collapsedWorkspaceStatuses.map((status) => (
+                      status.count > 1 ? `${status.label} ×${status.count}` : status.label
+                    )).join('，'),
+                    'aria-label': collapsedWorkspaceStatuses.map((status) => (
+                      status.count > 1 ? `${status.label} ×${status.count}` : status.label
+                    )).join('，'),
+                  },
+                  collapsedWorkspaceStatuses.map((status) => h(
+                    'span',
+                    { key: status.state, className: 'dsg-wsStatusItem' },
+                    h(StateDot, { state: status.state }),
+                    status.count > 1
+                      ? h('span', { className: 'dsg-wsStatusCount' }, String(status.count))
+                      : null,
+                  )),
+                )
+              : null,
+            editingWorkspace?.workspaceId === workspace.workspaceId
+              ? h(GroupNameEditor, {
+                  initialValue: editingWorkspace.value,
+                  onCommit: commitWorkspaceRename,
+                  onCancel: cancelWorkspaceRename,
+                })
+              : h('span', { className: 'dsg-wsName', title: workspace.path || workspaceTitle(workspace) }, workspaceTitle(workspace)),
+            h(
+              'span',
+              { className: 'dsg-wsActions' },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsg-wsAction',
+                  title: tr('workspace.menu'),
+                  'aria-label': tr('workspace.menu'),
+                  onPointerDown: (event) => event.stopPropagation(),
+                  onClick: (event) => openWorkspaceMenu(event, workspace),
+                },
+                h(IconMore, { width: 16, height: 16 }),
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsg-wsAction',
+                  title: tr('newSession.aria', { name: workspaceTitle(workspace) }),
+                  'aria-label': tr('newSession.aria', { name: workspaceTitle(workspace) }),
+                  onPointerDown: (event) => event.stopPropagation(),
+                  onClick: (event) => {
+                    event.stopPropagation();
+                    startSession(workspace.workspaceId);
+                  },
+                },
+                h(IconNewChatCircle, { width: 16, height: 16 }),
+              ),
+            ),
+          ),
+          collapsed
+            ? null
+            : h(
+                'div',
+                {
+                  className: 'dsg-wsBody',
+                  onDragOver: (event) => handleUngroupedDragOver(event, workspace.workspaceId),
+                  onDrop: (event) => handleUngroupedDrop(event, workspace.workspaceId),
+                },
+                childSections.map((child) => renderWorkspace(child, depth + 1)),
+                topItems.map((item) => (
+                  item.kind === 'group'
+                    ? renderGroup(workspace, item.node)
+                    : renderSessionNode(item.id, workspace.workspaceId, null)
+                )),
+                ungroupedOverflow.button,
+                h(
+                  'div',
+                  {
+                    className: 'dsg-ungroupedZone'
+                      + (zoneActive ? ' dsg-zoneDrop' : '')
+                      + (topEndActive ? ' dsg-zoneDropEnd' : ''),
+                    onDragOver: (event) => handleUngroupedDragOver(event, workspace.workspaceId),
+                    onDrop: (event) => handleUngroupedDrop(event, workspace.workspaceId),
+                  },
+                ),
+              ),
+        );
+      };
+
+      const renderFlatList = () => {
+        const children = [];
+        for (const section of sections) {
+          if (section.ungroupedOnly) {
+            for (const sessionId of section.ungrouped) {
+              children.push(renderSessionNode(sessionId, null, null));
+            }
+            continue;
+          }
+          for (const item of section.topItems) {
+            if (item.kind === 'group') {
+              children.push(renderGroup(section.workspace, item.node));
+            } else {
+              children.push(renderSessionNode(item.id, section.workspace.workspaceId, null));
+            }
+          }
+        }
+        return h('div', { className: 'dsg-flatList' }, children);
+      };
+
+      const renderAddWorkspaceDialog = () => {
+        if (!addWorkspaceDialog) return null;
+        return h(DirectoryPickerDialog, {
+          t: tr,
+          listDirectory,
+          createDirectory,
+          onPicked: pickAddWorkspaceDirectory,
+          onClose: closeAddWorkspaceDialog,
+          busy: addWorkspaceDialog.busy === true,
+        });
+      };
+
+      const renderHeader = () => {
+        if (searchOpen) {
+          return h(
+            'div',
+            { className: 'dsg-searchRow' },
+            h(IconSearch, { width: 15, height: 15, style: { color: 'var(--dsw-alias-label-tertiary)', flex: 'none', marginLeft: 2 } }),
+            h('input', {
+              className: 'dsg-searchInput',
+              autoFocus: true,
+              value: searchText,
+              placeholder: tr('search.placeholder'),
+              'aria-label': tr('search.placeholder'),
+              onChange: (event) => setSearchText(event.target.value),
+              onKeyDown: (event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  setSearchText('');
+                  setSearchOpen(false);
+                }
+              },
+            }),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsg-iconBtn',
+                title: tr('search.clear'),
+                'aria-label': tr('search.clear'),
+                onClick: () => {
+                  if (searchText) setSearchText('');
+                  else setSearchOpen(false);
+                },
+              },
+              h(IconClose, { width: 14, height: 14 }),
+            ),
+          );
+        }
+        return h(
+          'div',
+          { className: 'dsg-header' },
+          h('span', { className: 'dsg-title' }, tr('section.title')),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dsg-iconBtn',
+              title: tr('search.open'),
+              'aria-label': tr('search.open'),
+              onClick: () => setSearchOpen(true),
+            },
+            h(IconSearch, { width: 15, height: 15 }),
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dsg-iconBtn',
+              title: tr('view.options'),
+              'aria-label': tr('view.options'),
+              onClick: openViewMenu,
+            },
+            h(IconSliders, { width: 15, height: 15 }),
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dsg-iconBtn',
+              title: tr('addWorkspace'),
+              'aria-label': tr('addWorkspace'),
+              disabled: addingWorkspace,
+              onClick: handleAddWorkspace,
+            },
+            h(IconWorkspaceAdd, { width: 16, height: 16 }),
+          ),
+        );
+      };
+
+      const renderHoverCard = () => {
+        if (!hoverCard) return null;
+        const { sessionId, rect } = hoverCard;
+        const row = list.byId?.[sessionId] ?? {};
+        const { statuses, primaryStatus } = statusInfoFor(sessionId);
+        const timeText = row.blank
+          ? ''
+          : primaryStatus.trailingLabel ?? relativeTime(row.updatedAt, now, tr);
+        const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
+        const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+        const width = 244;
+        let left = rect.right + 8;
+        if (left + width > viewportWidth - 8) {
+          left = Math.max(8, rect.left - width - 8);
+        }
+        const top = Math.max(8, Math.min(rect.top, viewportHeight - 320));
+        return h(SessionHoverCard, {
+          key: sessionId,
+          sessionId,
+          title: titleOf(sessionId),
+          cwd: row.cwd ?? workspaces.find((workspace) => (workspace.sessionIds ?? []).includes(sessionId))?.path,
+          timeText,
+          scheduleTasks: scheduleBySession.get(sessionId) ?? [],
+          now,
+          statuses: archivedSessionIds.has(sessionId)
+            ? statuses.filter((status) => status.state !== 'done' && status.state !== 'idle')
+            : statuses,
+          archived: archivedSessionIds.has(sessionId),
+          renderSlot,
+          onMouseEnter: enterHoverCard,
+          onMouseLeave: scheduleHoverClose,
+          style: { left, top, width },
+          tr,
+        });
+      };
+
+      const renderMenu = () => {
+        if (!menu) return null;
+        if (menu.kind === 'group') {
+          const groups = prefs.groups?.[menu.workspaceId] ?? [];
+          const group = groups.find((item) => item.id === menu.groupId);
+          if (!group) return null;
+          const targetGroups = groups.filter((target) => (
+            target.id !== group.id
+            && target.id !== group.parentGroupId
+            && canNestGroup(groups, group.id, target.id)
+          ));
+          const customColor = !GROUP_COLORS.includes(group.color);
+          const colorEditorForGroup = colorEditor
+            && colorEditor.workspaceId === menu.workspaceId
+            && colorEditor.groupId === group.id
+            ? colorEditor
+            : null;
+          const rgbPreview = colorEditorForGroup
+            ? rgbToHex(
+                Number(colorEditorForGroup.r) || 0,
+                Number(colorEditorForGroup.g) || 0,
+                Number(colorEditorForGroup.b) || 0,
+              )
+            : group.color;
+          return h(
+            InlineMenu,
+            { rect: menu.rect, onClose: closeMenu },
+            h(MenuItem, {
+              icon: h(IconEdit),
+              label: tr('group.rename'),
+              onClick: () => beginGroupRename(menu.workspaceId, menu.groupId),
+            }),
+            h('div', { className: 'dsg-menuLabelText' }, tr('group.color')),
+            h(
+              'div',
+              { className: 'dsg-swatches' },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsg-rgbTrigger' + (customColor ? ' selected' : ''),
+                  title: tr('group.rgbTitle'),
+                  'aria-label': tr('group.rgbTitle'),
+                  'aria-expanded': Boolean(colorEditorForGroup),
+                  style: customColor ? { borderColor: group.color } : undefined,
+                  onClick: () => {
+                    if (colorEditorForGroup) setColorEditor(null);
+                    else openColorEditor(menu.workspaceId, menu.groupId, group.color);
+                  },
+                },
+                tr('group.rgb'),
+              ),
+              GROUP_COLORS.map((color) => h('button', {
+                key: color,
+                type: 'button',
+                className: 'dsg-swatch' + (color === group.color ? ' selected' : ''),
+                title: color,
+                'aria-label': color,
+                style: {
+                  '--dsg-swatch-color-light': color,
+                  '--dsg-swatch-color-dark': GROUP_COLORS_DARK[color] ?? color,
+                },
+                onClick: () => {
+                  setPrefs((previous) => patchGroup(previous, menu.workspaceId, menu.groupId, { color }));
+                  closeMenu();
+                },
+              })),
+            ),
+            colorEditorForGroup
+              ? h(
+                  'div',
+                  { className: 'dsg-rgbEditor' },
+                  h('span', {
+                    className: 'dsg-rgbPreview',
+                    style: { background: rgbPreview },
+                    title: rgbPreview,
+                  }),
+                  h(
+                    'div',
+                    { className: 'dsg-rgbFields' },
+                    ['r', 'g', 'b'].map((channel) => h(
+                      'label',
+                      { key: channel, className: 'dsg-rgbField' },
+                      h('span', { className: 'dsg-rgbLabel' }, channel.toUpperCase()),
+                      h('input', {
+                        className: 'dsg-rgbInput',
+                        type: 'text',
+                        inputMode: 'numeric',
+                        maxLength: 3,
+                        autoFocus: channel === 'r',
+                        value: colorEditorForGroup[channel],
+                        onChange: (event) => updateColorEditorChannel(channel, event.target.value),
+                        onKeyDown: (event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            applyColorEditor();
+                          } else if (event.key === 'Escape') {
+                            event.preventDefault();
+                            setColorEditor(null);
+                          }
+                        },
+                      }),
+                    )),
+                  ),
+                  h(
+                    'div',
+                    { className: 'dsg-rgbActions' },
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        className: 'dsg-rgbAction',
+                        onClick: () => setColorEditor(null),
+                      },
+                      tr('group.rgbCancel'),
+                    ),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        className: 'dsg-rgbAction primary',
+                        onClick: applyColorEditor,
+                      },
+                      tr('group.rgbApply'),
+                    ),
+                  ),
+                  colorEditorForGroup.error
+                    ? h('div', { className: 'dsg-rgbError' }, colorEditorForGroup.error)
+                    : null,
+                )
+              : null,
+            h('div', { className: 'dsg-menuSeparator' }),
+            group.parentGroupId
+              ? h(MenuItem, {
+                  icon: h(IconUngroup),
+                  label: tr('group.moveOut'),
+                  onClick: () => handleMoveGroupOut(menu.workspaceId, menu.groupId),
+                })
+              : null,
+            targetGroups.length > 0
+              ? h(SubmenuItem, {
+                  icon: h(IconGroupMove),
+                  label: tr('group.moveLabel'),
+                  items: targetGroups.map((target) => ({
+                    key: target.id,
+                    icon: h('span', {
+                      className: 'dsg-groupSwatch',
+                      style: groupColorVars(target.color),
+                    }),
+                    label: tr('group.moveToGroup', { name: target.name }),
+                    onClick: () => handleMoveGroupToGroup(menu.workspaceId, menu.groupId, target.id),
+                  })),
+                })
+              : null,
+            h('div', { className: 'dsg-menuSeparator' }),
+            h(MenuItem, {
+              icon: h(IconData),
+              label: tr('data.open'),
+              onClick: () => openDataPanel(
+                'group',
+                groupSessionIds(menu.workspaceId, menu.groupId),
+                { workspaceId: menu.workspaceId, groupId: menu.groupId },
+              ),
+            }),
+            h('div', { className: 'dsg-menuSeparator' }),
+            h(MenuItem, {
+              icon: h(IconUngroup),
+              label: tr('group.dissolve'),
+              danger: true,
+              onClick: () => handleDissolveGroup(menu.workspaceId, menu.groupId),
+            }),
+          );
+        }
+        if (menu.kind === 'workspace') {
+          const workspace = workspaces.find((item) => item.workspaceId === menu.workspaceId);
+          if (!workspace) return null;
+          return h(
+            InlineMenu,
+            { rect: menu.rect, onClose: closeMenu },
+            h(MenuItem, {
+              icon: h(IconSort),
+              label: tr('sort.byTime'),
+              onClick: () => handleSortWorkspace(workspace.workspaceId, 'time'),
+            }),
+            h(MenuItem, {
+              icon: h(IconSortAlpha),
+              label: tr('sort.byInitial'),
+              onClick: () => handleSortWorkspace(workspace.workspaceId, 'initial'),
+            }),
+            h('div', { className: 'dsg-menuSeparator' }),
+            h(MenuItem, {
+              icon: h(IconData),
+              label: tr('data.open'),
+              onClick: () => openDataPanel(
+                'workspace',
+                workspaceSessionIds(workspace.workspaceId),
+                workspace.workspaceId,
+              ),
+            }),
+            h(MenuItem, {
+              icon: h(IconEdit),
+              label: tr('workspace.rename'),
+              onClick: () => beginWorkspaceRename(workspace),
+            }),
+            h(MenuItem, {
+              icon: h(IconTrash),
+              label: tr('workspace.delete'),
+              danger: true,
+              onClick: () => handleDeleteWorkspace(workspace),
+            }),
+          );
+        }
+        const groups = menu.workspaceId ? prefs.groups?.[menu.workspaceId] ?? [] : [];
+        const currentGroup = menu.groupId ? groups.find((group) => group.id === menu.groupId) : null;
+        const otherGroups = groups.filter((group) => group.id !== menu.groupId);
+        const pinned = pinnedSessionIds.has(menu.sessionId);
+        const archived = archivedSessionIds.has(menu.sessionId);
+        const blank = list.byId?.[menu.sessionId]?.blank === true;
+        let externalSessionMenu = null;
+        if (typeof renderSlot === 'function') {
+          try {
+            externalSessionMenu = renderSlot(
+              'sidebar.workspaces.session.menu.item',
+              { sessionId: menu.sessionId, displayTitle: titleOf(menu.sessionId) },
+              { hookContext: [true, (open) => { if (!open) closeMenu(); }] },
+            );
+          } catch {
+            externalSessionMenu = null;
+          }
+        }
+        return h(
+          InlineMenu,
+          { rect: menu.rect, onClose: closeMenu },
+          h(MenuItem, {
+            icon: pinned ? h(IconPinFill) : h(IconPinOutline),
+            label: pinned ? tr('session.unpin') : tr('session.pin'),
+            onClick: () => handleTogglePin(menu.sessionId),
+          }),
+          blank
+            ? null
+            : h(MenuItem, {
+                icon: h(IconEdit),
+                label: tr('session.rename'),
+                shortcut: 'Ctrl + Alt + G',
+                onClick: () => beginSessionRename(menu.sessionId),
+              }),
+          h(MenuItem, {
+            icon: h(IconBranch),
+            label: tr('session.fork'),
+            shortcut: 'Ctrl + Shift + F',
+            onClick: () => handleFork(menu.sessionId),
+          }),
+          h(MenuItem, {
+            icon: h(IconArchive),
+            label: archived ? tr('session.unarchive') : tr('session.archive'),
+            shortcut: archived ? undefined : 'Ctrl + Alt + A',
+            onClick: () => (archived ? handleUnarchive(menu.sessionId) : handleArchive(menu.sessionId)),
+          }),
+          h(MenuItem, {
+            icon: h(IconCopy),
+            label: tr('session.copyId'),
+            onClick: () => handleCopyId(menu.sessionId),
+          }),
+          externalSessionMenu,
+          h(MenuItem, {
+            icon: h(IconData),
+            label: tr('data.open'),
+            onClick: () => openDataPanel('session', [menu.sessionId], menu.sessionId),
+          }),
+          h('div', { className: 'dsg-menuSeparator' }),
+          h(MenuItem, {
+            icon: h(IconTrash),
+            label: menu.sessionId === currentSessionId ? tr('delete.current') : tr('session.delete'),
+            danger: true,
+            disabled: menu.sessionId === currentSessionId,
+            onClick: () => openDeleteDialog(menu.sessionId, menu.workspaceId),
+          }),
+          h('div', { className: 'dsg-menuSeparator' }),
+          menu.workspaceId
+            ? h(MenuItem, {
+                icon: h(IconGroupAdd),
+                label: tr('session.newGroup'),
+                onClick: () => handleCreateGroupForSession(menu.workspaceId, menu.sessionId),
+              })
+            : null,
+          currentGroup
+            ? h(MenuItem, {
+                icon: h(IconUngroup),
+                label: tr('session.removeFromGroup'),
+                onClick: () => handleRemoveFromGroup(menu.workspaceId, menu.sessionId),
+              })
+            : null,
+          otherGroups.length > 0
+            ? h('div', { className: 'dsg-menuSeparator' })
+            : null,
+          otherGroups.length > 0
+            ? h(SubmenuItem, {
+                icon: h(IconGroupMove),
+                label: tr('group.moveLabel'),
+                items: otherGroups.map((group) => ({
+                  key: group.id,
+                  icon: h('span', {
+                    className: 'dsg-groupSwatch',
+                    style: groupColorVars(group.color),
+                  }),
+                  label: tr('session.moveToGroup', { name: group.name }),
+                  onClick: () => handleMoveToGroup(menu.workspaceId, group.id, menu.sessionId),
+                })),
+              })
+            : null,
+        );
+      };
+
+      const renderDeleteDialog = () => deleteDialog
+        ? h(DeleteSessionDialog, {
+            sessionId: deleteDialog.sessionId,
+            title: deleteDialog.title,
+            knownRunning: deleteDialog.knownRunning,
+            knownSubagents: deleteDialog.knownSubagents,
+            currentSessionId: deleteDialog.currentSessionId,
+            tr,
+            onClose: () => setDeleteDialog(null),
+            onDeleted: () => {
+              const { sessionId, workspaceId } = deleteDialog;
+              setDeleteDialog(null);
+              setPrefs((previous) => removeSessionFromGroups(previous, workspaceId, sessionId));
+              notify(tr('delete.done'), true);
+            },
+          })
+        : null;
+
+      const renderDataPanel = () => dataPanel
+        ? h(DataPanel, {
+            key: dataPanel.key,
+            kind: dataPanel.kind,
+            title: dataPanel.title,
+            sessionIds: dataPanel.sessionIds,
+            pricing: prefs.pricing,
+            useSessions,
+            tr,
+            onClose: () => setDataPanel(null),
+          })
+        : null;
+
+      const renderViewMenu = () => {
+        if (!viewMenu) return null;
+        return h(
+          InlineMenu,
+          { rect: viewMenu.rect, onClose: () => setViewMenu(null) },
+          h(MenuItem, {
+            icon: h(IconGroup),
+            label: tr('view.expandAllGroups'),
+            onClick: () => applyViewAction('expandGroups'),
+          }),
+          h(MenuItem, {
+            icon: h(IconGroup),
+            label: tr('view.collapseAllGroups'),
+            onClick: () => applyViewAction('collapseGroups'),
+          }),
+          h('div', { className: 'dsg-menuSeparator' }),
+          h(MenuItem, {
+            label: tr('view.expandAllWorkspaces'),
+            onClick: () => applyViewAction('expandWorkspaces'),
+          }),
+          h(MenuItem, {
+            label: tr('view.collapseAllWorkspaces'),
+            onClick: () => applyViewAction('collapseWorkspaces'),
+          }),
+          h('div', { className: 'dsg-menuSeparator' }),
+          h(
+            'div',
+            { className: 'dsg-menuField' },
+            h('span', { className: 'dsg-menuFieldLabel' }, tr('view.workspaceLayout')),
+            h(
+              'span',
+              { className: 'dsg-layoutOptions' },
+              [
+                { id: 'workspace', label: tr('view.workspaceLayout.workspace'), icon: IconFolderClose },
+                { id: 'tree', label: tr('view.workspaceLayout.tree'), icon: IconWorkspaceTree },
+                { id: 'flat', label: tr('view.workspaceLayout.flat'), icon: IconFlatList },
+              ].map((option) => h(
+                'span',
+                { key: option.id, className: 'dsg-layoutOption' },
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'dsg-layoutBtn',
+                    title: option.label,
+                    'aria-label': option.label,
+                    'aria-pressed': (option.id === 'flat'
+                      ? prefs.flatList === true
+                      : option.id === 'tree' ? prefs.workspaceTree === true : prefs.flatList !== true && prefs.workspaceTree !== true),
+                    onClick: () => chooseWorkspaceLayout(option.id),
+                  },
+                  h(option.icon, { width: 16, height: 16 }),
+                ),
+                h(
+                  'span',
+                  { className: 'dsg-layoutCheck' },
+                  (option.id === 'flat'
+                    ? prefs.flatList === true
+                    : option.id === 'tree' ? prefs.workspaceTree === true : prefs.flatList !== true && prefs.workspaceTree !== true)
+                    ? h(IconCheck, { width: 12, height: 12 })
+                    : null,
+                ),
+              )),
+            ),
+          ),
+          h('div', { className: 'dsg-menuSeparator' }),
+          h(MenuItem, {
+            icon: h(IconSort),
+            label: tr('sort.byTime'),
+            onClick: () => handleSortAll('time'),
+          }),
+          h(MenuItem, {
+            icon: h(IconSortAlpha),
+            label: tr('sort.byInitial'),
+            onClick: () => handleSortAll('initial'),
+          }),
+          h('div', { className: 'dsg-menuSeparator' }),
+          h(MenuItem, {
+            label: tr('view.resetOrder'),
+            onClick: () => applyViewAction('resetOrder'),
+          }),
+          h('div', { className: 'dsg-menuSeparator' }),
+          h(MenuItem, {
+            icon: h(IconArchiveOff),
+            label: tr('workspace.hideArchived'),
+            checked: prefs.hideArchived !== false,
+            onClick: handleToggleHideArchived,
+          }),
+          h('div', { className: 'dsg-menuSeparator' }),
+          h(MenuItem, {
+            label: tr('view.official'),
+            onClick: () => {
+              setViewMenu(null);
+              setGroupedMode(false);
+            },
+          }),
+        );
+      };
+
+      if (!wide) {
+        return h(
+          React.Fragment,
+          null,
+          h('style', { key: 'styles' }, CSS),
+          h(Rail, {
+            t: tr,
+            expandSidebar,
+            onAddWorkspace: handleAddWorkspace,
+          }),
+        );
+      }
+
+      const showHint = !query
+        && !hasAnyGroup
+        && visibleCount >= 2
+        && phase === 'ready';
+
+      return h(
+        React.Fragment,
+        null,
+        h('style', { key: 'styles' }, CSS),
+        h(
+          'div',
+          { className: 'dsg-root', ref: rootRef },
+          renderHeader(),
+          h(
+            'div',
+            {
+              className: 'dsg-scroll',
+              ref: sectionScroller?.bindScrollerRef,
+            },
+            phase === 'pending' && sections.length === 0
+              ? h('div', { className: 'dsg-empty' }, tr('section.loading'))
+              : sections.length === 0
+                ? h(
+                    'div',
+                    { className: 'dsg-empty' },
+                    query ? tr('section.emptySearch') : tr('section.empty'),
+                    !query
+                      ? h(
+                          'button',
+                          {
+                            type: 'button',
+                            className: 'dsg-emptyAction',
+                            onClick: handleAddWorkspace,
+                          },
+                          h(IconWorkspaceAdd, { width: 14, height: 14 }),
+                          tr('addWorkspace'),
+                        )
+                      : null,
+                  )
+                : flatListMode
+                  ? renderFlatList()
+                  : treeLayout.roots.map((section) => renderWorkspace(section, 0)),
+          ),
+        ),
+        renderDeleteDialog(),
+        renderDataPanel(),
+        renderHoverCard(),
+        renderMenu(),
+        renderViewMenu(),
+        renderAddWorkspaceDialog(),
+        notice
+          ? h('div', {
+              key: 'notice',
+              className: 'dsg-toast',
+              role: 'status',
+              'aria-live': 'polite',
+              style: toastPosition
+                ? {
+                    left: toastPosition.left,
+                    bottom: toastPosition.bottom,
+                    maxWidth: toastPosition.maxWidth,
+                  }
+                : undefined,
+            }, notice)
+          : null,
+      );
+    }
+
+    /* ── data plugin body ─────────────────────────────────────────── */
+
+    const DATA_EVENT = 'dsh-session-groups-data:provider';
+
+    return {
+      inject: ['slots', 'locale', 'sessionGroupsUI'],
+      apply(ctx) {
+        ctx.effect(
+          () => ctx.locale.register(NS, { zh: ZH, en: EN }),
+          'session-groups-data: locale dictionaries',
+        );
+        ctx.effect(() => {
+          if (typeof document === 'undefined' || !document.head) return undefined;
+          const style = document.createElement('style');
+          style.dataset.dshSessionGroupsData = '';
+          style.textContent = CSS;
+          document.head.appendChild(style);
+          return () => style.remove();
+        }, 'session-groups-data: styles');
+        const t = ctx.locale.bind(NS);
+
+        let current = null;
+        const listeners = new Set();
+        const notify = () => {
+          for (const listener of [...listeners]) {
+            try { listener(); } catch { /* keep the overlay updatable */ }
+          }
+        };
+        const store = {
+          getSnapshot: () => current,
+          subscribe: (listener) => {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+          },
+          open: (context) => {
+            current = context;
+            notify();
+          },
+          close: () => {
+            if (current === null) return;
+            current = null;
+            notify();
+          },
+        };
+
+        function DataOverlay(props) {
+          const context = React.useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+          if (!context) {
+            return h('span', { hidden: true, 'aria-hidden': 'true' });
+          }
+          const title = context.title
+            || t(context.kind === 'session' ? 'data.title.session' : context.kind === 'group' ? 'data.title.group' : 'data.title.workspace');
+          return h(DataPanel, {
+            kind: context.kind,
+            title,
+            sessionIds: context.sessionIds,
+            pricing: loadPrefs().pricing,
+            useSessions: props.useSessions,
+            tr: t,
+            onClose: store.close,
+          });
+        }
+
+        ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+          name: 'shell.overlay',
+          id: 'session-groups-data',
+          locale: NS,
+        }, DataOverlay));
+
+        ctx.effect(() => {
+          const provider = {
+            protocol: 1,
+            id: 'session-groups-data',
+            open: (context) => {
+              store.open({
+                kind: context.kind,
+                sessionIds: Array.isArray(context.sessionIds) ? [...context.sessionIds] : [],
+                title: context.title,
+                target: context.target ?? {},
+              });
+            },
+            close: () => store.close(),
+            invalidate: () => {
+              /* the panel owns its own fetch cache; force a reload on next open */
+              liveDataCache.clear();
+            },
+          };
+          const off = ctx.sessionGroupsUI.registerDataProvider(provider);
+          return () => {
+            try { off(); } catch { /* provider already gone */ }
+            store.close();
+          };
+        }, 'session-groups-data: provider');
+
+        // Settings are registered independently so the panel can be closed while
+        // the user edits pricing. The core plugin does not own pricing.
+        ctx.slots.inject('settings.section', () => ctx.slots.register({
+          name: 'settings.section',
+          id: 'session-groups-data',
+          order: 81,
+          label: () => t('settings.nav'),
+          locale: NS,
+        }, DataSettings));
+      },
+    };
+  },
+});

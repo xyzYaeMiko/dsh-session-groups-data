@@ -1,0 +1,7 @@
+# session-groups data extension bundle patch.
+# One Host row: the browser half registers a data provider with the core
+# session-groups client service and renders its own shell overlay.
+
+- insert:
+    - id: session-groups-data
+      name: dsh-session-groups-data
